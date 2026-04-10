@@ -180,9 +180,7 @@ export default function App() {
         {/* Topbar */}
         <div className="topbar">
           <div className="topbar-left">
-            <div className="topbar-logo-icon">
-              <span className="material-symbols-outlined">music_note</span>
-            </div>
+            <img src="/logo.png" alt="" className="topbar-logo-icon" />
             <span className="topbar-logo-text">Relaxify</span>
           </div>
 
