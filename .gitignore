@@ -1,0 +1,23 @@
+# Root
+node_modules
+.env
+.env.local
+*.log
+
+# Build
+dist
+dist-ssr
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
