@@ -77,7 +77,11 @@ Client runs at: http://localhost:5173
 |--------|----------|-------------|
 | GET | `/api/search?q=keyword` | Search YouTube (cached in PostgreSQL) |
 | GET | `/api/stream?url=youtubeUrl` | Stream audio via yt-dlp |
+| GET | `/api/playlists/all` | Get all playlists (6 songs each) |
+| GET | `/api/playlists/:type` | Get full playlist by type |
 | GET | `/health` | Health check |
+
+**Playlist Types:** `trending`, `hindiTop`, `englishTop`, `punjabi`, `romantic`, `party`
 
 ---
 
@@ -106,7 +110,9 @@ Music/
 
 ## How It Works
 
-1. User searches → backend checks PostgreSQL cache (1-day TTL)
-2. Cache miss → YouTube Data API v3 is called → results saved to cache
-3. User clicks a result → `/api/stream` spawns `yt-dlp` → audio piped to browser
-4. HTML `<audio>` tag plays the stream in real-time
+1. **Home Page** → Displays trending songs, top Hindi/English/Punjabi songs, romantic & party playlists
+2. **Real-time Updates** → Playlists refresh every hour automatically
+3. **Click Playlist** → View all songs in that category
+4. **Select Song** → `/api/stream` spawns `yt-dlp` → audio piped to browser
+5. **HTML `<audio>`** → Plays the stream in real-time with full player controls
+6. **Search** → Custom search with YouTube Data API v3 caching

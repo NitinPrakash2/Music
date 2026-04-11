@@ -18,6 +18,20 @@ const initDB = async () => {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS playlist_cache (
+      playlist_type TEXT PRIMARY KEY,
+      results       JSONB NOT NULL,
+      created_at    TIMESTAMP DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS search_history (
+      id          SERIAL PRIMARY KEY,
+      query       TEXT NOT NULL,
+      searched_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
   console.log('[DB] Tables ready');
 };
 

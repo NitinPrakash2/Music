@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
+import Home from './Home'
+import Search from './Search'
+import Playlist from './Playlist'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -10,10 +13,7 @@ const fmt = (s) => {
 }
 
 export default function App() {
-  const [query, setQuery] = useState(() => sessionStorage.getItem('rq') || '')
-  const [results, setResults] = useState(() => JSON.parse(sessionStorage.getItem('rr') || '[]'))
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/')
   const [activeItem, setActiveItem] = useState(() => JSON.parse(sessionStorage.getItem('ra') || 'null'))
   const [isPlaying, setIsPlaying] = useState(false)
   const [streamError, setStreamError] = useState('')
@@ -28,16 +28,66 @@ export default function App() {
   const [cardClosing, setCardClosing] = useState(false)
   const [shuffle, setShuffle] = useState(false)
   const [repeat, setRepeat] = useState('off')
+  const [queue, setQueue] = useState([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [recentSearches, setRecentSearches] = useState([])
+  const [showRecentSearches, setShowRecentSearches] = useState(false)
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
   const audioRef = useRef(null)
   const barSeekRef = useRef(null)
   const cardSeekRef = useRef(null)
   const volBarVertRef = useRef(null)
 
-  useEffect(() => { sessionStorage.setItem('rq', query) }, [query])
-  useEffect(() => { sessionStorage.setItem('rr', JSON.stringify(results)) }, [results])
+  useEffect(() => {
+    const onHash = () => setRoute(window.location.hash.slice(1) || '/')
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
   useEffect(() => { sessionStorage.setItem('ra', JSON.stringify(activeItem)) }, [activeItem])
   useEffect(() => { sessionStorage.setItem('rl', JSON.stringify(liked)) }, [liked])
+
+  useEffect(() => {
+    fetchSearchHistory()
+  }, [])
+
+  useEffect(() => {
+    if (searchQuery.trim().length > 0) {
+      const timer = setTimeout(() => {
+        fetchSuggestions(searchQuery)
+      }, 300)
+      return () => clearTimeout(timer)
+    } else {
+      setSearchSuggestions([])
+      setShowSuggestions(false)
+    }
+  }, [searchQuery])
+
+  const fetchSearchHistory = async () => {
+    try {
+      const res = await fetch(`${API}/api/search-history`)
+      const data = await res.json()
+      if (res.ok) setRecentSearches(data.history || [])
+    } catch (err) {
+      console.error('Failed to fetch search history:', err)
+    }
+  }
+
+  const fetchSuggestions = async (query) => {
+    try {
+      const res = await fetch(`${API}/api/search-suggestions?q=${encodeURIComponent(query)}`)
+      const data = await res.json()
+      if (res.ok && data.suggestions) {
+        setSearchSuggestions(data.suggestions)
+        setShowSuggestions(true)
+      }
+    } catch (err) {
+      console.error('Failed to fetch suggestions:', err)
+    }
+  }
 
   useEffect(() => {
     const audio = audioRef.current
@@ -55,7 +105,6 @@ export default function App() {
     }
   }, [])
 
-  // Save playback position periodically
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
@@ -67,7 +116,6 @@ export default function App() {
     return () => audio.removeEventListener('timeupdate', save)
   }, [activeItem])
 
-  // Restore audio src from cache on mount
   useEffect(() => {
     if (!activeItem) return
     const audio = audioRef.current
@@ -84,13 +132,53 @@ export default function App() {
     }
   }, [])
 
-  // keep localStorage blob cache across sessions — server DB is the source of truth
-
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') closeCard() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
+
+  const handleSearch = async (q = searchQuery) => {
+    q = q.trim()
+    if (!q) return
+    
+    try {
+      await fetch(`${API}/api/search-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q })
+      })
+      await fetchSearchHistory()
+    } catch (err) {
+      console.error('Failed to save search history:', err)
+    }
+    
+    setShowRecentSearches(false)
+    setShowSuggestions(false)
+    navigate(`/search?q=${encodeURIComponent(q)}`)
+  }
+
+  const removeRecentSearch = async (q) => {
+    try {
+      await fetch(`${API}/api/search-history/${encodeURIComponent(q)}`, {
+        method: 'DELETE'
+      })
+      await fetchSearchHistory()
+    } catch (err) {
+      console.error('Failed to delete search history:', err)
+    }
+  }
+
+  const clearAllRecentSearches = async () => {
+    try {
+      await fetch(`${API}/api/search-history`, {
+        method: 'DELETE'
+      })
+      await fetchSearchHistory()
+    } catch (err) {
+      console.error('Failed to clear search history:', err)
+    }
+  }
 
   const drag = (barRef, onMove) => (e) => {
     e.preventDefault()
@@ -148,33 +236,10 @@ export default function App() {
   }
 
   const handleVolume = dragVertical(volBarVertRef, (pct) => {
-    const v = 1 - pct  // invert: top = loud, bottom = quiet
+    const v = 1 - pct
     if (audioRef.current) audioRef.current.volume = v
     setVolume(v)
   })
-
-  const search = async (q = query) => {
-    q = q.trim()
-    if (!q) return
-    // if same query and results already loaded, skip fetch
-    if (q.toLowerCase() === query.toLowerCase() && results.length > 0) return
-    setQuery(q)
-    setLoading(true)
-    setError('')
-    setResults([])
-    setStreamError('')
-    try {
-      const res = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Search failed')
-      setResults(data.results || [])
-      if (!data.results?.length) setError('No results found.')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const play = async (item) => {
     setStreamError('')
@@ -235,24 +300,24 @@ export default function App() {
   }
 
   const playNext = () => {
-    if (!results.length) return
-    const idx = results.findIndex(r => r.videoId === activeItem?.videoId)
+    if (!queue.length) return
+    const idx = queue.findIndex(r => r.videoId === activeItem?.videoId)
     let next
     if (shuffle) {
-      const others = results.filter(r => r.videoId !== activeItem?.videoId)
+      const others = queue.filter(r => r.videoId !== activeItem?.videoId)
       next = others[Math.floor(Math.random() * others.length)]
     } else {
-      next = results[(idx + 1) % results.length]
+      next = queue[(idx + 1) % queue.length]
     }
     if (next) play(next)
   }
 
   const playPrev = () => {
-    if (!results.length) return
+    if (!queue.length) return
     const audio = audioRef.current
     if (audio && audio.currentTime > 3) { audio.currentTime = 0; return }
-    const idx = results.findIndex(r => r.videoId === activeItem?.videoId)
-    const prev = results[(idx - 1 + results.length) % results.length]
+    const idx = queue.findIndex(r => r.videoId === activeItem?.videoId)
+    const prev = queue[(idx - 1 + queue.length) % queue.length]
     if (prev) play(prev)
   }
 
@@ -263,88 +328,127 @@ export default function App() {
 
   const cycleRepeat = () => setRepeat(r => r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')
 
+  const navigate = (path) => {
+    if (path === '/') {
+      setSearchQuery('')
+    }
+    window.location.hash = path
+  }
+
+  let content
+  if (route === '/' || route === '') {
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+  } else if (route.startsWith('/search')) {
+    const params = new URLSearchParams(route.split('?')[1])
+    const q = params.get('q') || ''
+    content = <Search searchQuery={q} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+  } else if (route.startsWith('/playlist/')) {
+    const type = route.split('/')[2]
+    content = <Playlist type={type} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+  } else {
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+  }
+
   return (
     <div className="layout">
       <div className="main">
-
-        {/* Topbar */}
         <div className="topbar">
-          <div className="topbar-left">
+          <div className="topbar-left" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
             <img src="/logo.png" alt="" className="topbar-logo-icon" />
             <span className="topbar-logo-text">Relaxify</span>
           </div>
-          <div className="topbar-right">
-            <div className="search-wrap">
-              <span className="material-symbols-outlined">search</span>
-              <input
-                placeholder="Search songs, artists..."
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && search()}
-              />
-              {loading && <span className="material-symbols-outlined spin" style={{ color: '#f2ca50', fontSize: 15 }}>autorenew</span>}
+          <div className="topbar-center">
+            <div className="topbar-search-wrapper">
+              <div className={`topbar-search-container${searchFocused ? ' focused' : ''}`}>
+                <span className="material-symbols-outlined">search</span>
+                <input
+                  placeholder="What do you want to listen to?"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  onFocus={() => { 
+                    setSearchFocused(true); 
+                    if (searchQuery.trim().length === 0) {
+                      setShowRecentSearches(true);
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => { 
+                    setSearchFocused(false); 
+                    setShowRecentSearches(false);
+                    setShowSuggestions(false);
+                  }, 200)}
+                />
+                {searchQuery && (
+                  <button className="topbar-clear-btn" onClick={() => { setSearchQuery(''); setSearchSuggestions([]); }}>
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                )}
+              </div>
+              <button className="topbar-search-btn" onClick={() => handleSearch()} disabled={!searchQuery.trim()}>
+                <span className="material-symbols-outlined">search</span>
+              </button>
+
+              {showRecentSearches && recentSearches.length > 0 && searchQuery.trim().length === 0 && (
+                <div className="topbar-recent-searches">
+                  <div className="topbar-recent-header">
+                    <span>Recent searches</span>
+                    <button onClick={clearAllRecentSearches}>Clear all</button>
+                  </div>
+                  {recentSearches.map((item, idx) => (
+                    <div 
+                      key={idx} 
+                      className="topbar-recent-item" 
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSearchQuery(item);
+                        handleSearch(item);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">history</span>
+                      <span className="topbar-recent-text">{item}</span>
+                      <button 
+                        className="topbar-recent-remove" 
+                        onMouseDown={(e) => { 
+                          e.preventDefault();
+                          e.stopPropagation(); 
+                          removeRecentSearch(item); 
+                        }}
+                      >
+                        <span className="material-symbols-outlined">close</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showSuggestions && searchSuggestions.length > 0 && searchQuery.trim().length > 0 && (
+                <div className="topbar-recent-searches">
+                  {searchSuggestions.map((item, idx) => (
+                    <div 
+                      key={idx} 
+                      className="topbar-recent-item" 
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSearchQuery(item);
+                        handleSearch(item);
+                      }}
+                    >
+                      <span className="material-symbols-outlined">search</span>
+                      <span className="topbar-recent-text">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <button className="search-btn" onClick={() => search()} disabled={loading}>
-              {loading ? 'Searching...' : 'Search'}
-            </button>
-            <div className="topbar-divider" />
+          </div>
+          <div className="topbar-right">
             <button className="topbar-icon-btn"><span className="material-symbols-outlined">notifications</span></button>
             <button className="topbar-icon-btn"><span className="material-symbols-outlined">settings</span></button>
           </div>
         </div>
 
-        {/* Content */}
         <div className="content">
-          {error && <p className="error">{error}</p>}
-
-          {results.length > 0 && (
-            <>
-              <div className="results-header">
-                <h2>Results</h2>
-                <span>{results.length} tracks</span>
-              </div>
-              <div className="grid">
-                {results.map(item => (
-                  <div
-                    key={item.videoId}
-                    className={`track-card${activeItem?.videoId === item.videoId ? ' active' : ''}${activeItem?.videoId === item.videoId && downloading ? ' loading' : ''}`}
-                    onClick={() => play(item)}
-                  >
-                    <div className="track-thumb">
-                      <img src={item.thumbnail} alt={item.title} />
-                      <div className="track-overlay">
-                        <div className="play-icon">
-                          {activeItem?.videoId === item.videoId && downloading
-                            ? <span className="material-symbols-outlined spin" style={{ color: '#1a1000', fontSize: 22 }}>autorenew</span>
-                            : <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                                {activeItem?.videoId === item.videoId && isPlaying ? 'pause' : 'play_arrow'}
-                              </span>
-                          }
-                        </div>
-                        <span
-                          className="material-symbols-outlined like-btn"
-                          style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#fff' }}
-                          onClick={e => toggleLike(e, item.videoId)}
-                        >favorite</span>
-                      </div>
-                    </div>
-                    <div className="track-info">
-                      <p className="track-title">{item.title}</p>
-                      <p className="track-channel">{item.channel}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {results.length === 0 && !loading && (
-            <div className="empty">
-              <span className="material-symbols-outlined">music_note</span>
-              <h2>Search for music</h2>
-              <p>Type a song or artist name above and hit Search to start streaming.</p>
-            </div>
-          )}
+          {content}
         </div>
       </div>
 
@@ -362,21 +466,18 @@ export default function App() {
           if (repeat === 'one') { audioRef.current.currentTime = 0; audioRef.current.play() }
           else if (repeat === 'all' || shuffle) playNext()
           else {
-            const idx = results.findIndex(r => r.videoId === activeItem?.videoId)
-            if (idx < results.length - 1) playNext()
+            const idx = queue.findIndex(r => r.videoId === activeItem?.videoId)
+            if (idx < queue.length - 1) playNext()
             else setIsPlaying(false)
           }
         }}
       />
 
-      {/* ── Bottom Player Bar ── */}
       <div className={`player-bar${activeItem ? ' visible' : ''}`}>
-        {/* thin seek line across the very top of the bar */}
         <div className="bar-progress" ref={barSeekRef} onMouseDown={handleBarSeek} onTouchStart={handleBarSeek}>
           <div className="bar-progress-fill" style={{ width: `${progress}%` }} />
         </div>
 
-        {/* left: thumb + info → click opens card */}
         <div className="bar-left" onClick={() => activeItem && setShowCard(true)}>
           <div className="bar-thumb-wrap">
             {activeItem && <img src={activeItem.thumbnail} alt="" />}
@@ -392,7 +493,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* center: prev + play/pause + next */}
         <div className="bar-center">
           <button className="bar-skip" onClick={playPrev}><span className="material-symbols-outlined">skip_previous</span></button>
           <button className="bar-play" onClick={togglePlay} disabled={downloading}>
@@ -403,7 +503,6 @@ export default function App() {
           <button className="bar-skip" onClick={playNext}><span className="material-symbols-outlined">skip_next</span></button>
         </div>
 
-        {/* right: like + expand */}
         <div className="bar-right">
           <span
             className="material-symbols-outlined bar-like"
@@ -418,20 +517,15 @@ export default function App() {
         {streamError && <p className="bar-err">{streamError}</p>}
       </div>
 
-      {/* ── Now Playing Card ── */}
       {showCard && activeItem && (
         <div className={`np-overlay${cardClosing ? ' closing' : ''}`} onClick={closeCard}>
           <div className={`np-card${cardClosing ? ' closing' : ''}`} onClick={e => e.stopPropagation()}>
-
-            {/* blurred album art bg */}
             <div className="np-card-bg" style={{ backgroundImage: `url(${activeItem.thumbnail})` }} />
             <div className="np-card-dim" />
 
             <div className="np-card-body">
-              {/* drag handle */}
               <div className="np-drag-handle" />
 
-              {/* header */}
               <div className="np-header">
                 <button className="np-close" onClick={closeCard}>
                   <span className="material-symbols-outlined">keyboard_arrow_down</span>
@@ -464,7 +558,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* vinyl disc */}
               <div className="np-art-wrap">
                 <div className={`np-disc${isPlaying ? ' spinning' : ''}`}>
                   <img src={activeItem.thumbnail} alt="" className="np-disc-img" />
@@ -473,13 +566,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* track info */}
               <div className="np-meta">
                 <p className="np-title">{activeItem.title}</p>
                 <p className="np-ch">{activeItem.channel}</p>
               </div>
 
-              {/* seek bar */}
               <div className="np-seek-wrap">
                 <div className="np-seek" ref={cardSeekRef} onMouseDown={handleCardSeek} onTouchStart={handleCardSeek}>
                   <div className="np-seek-rail" />
@@ -493,7 +584,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* controls */}
               <div className="np-controls">
                 <button className={`np-btn-sm${shuffle ? ' np-btn-active' : ''}`} onClick={() => setShuffle(v => !v)}>
                   <span className="material-symbols-outlined">shuffle</span>
