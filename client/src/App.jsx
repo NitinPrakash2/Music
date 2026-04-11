@@ -23,10 +23,16 @@ export default function App() {
   const [duration, setDuration] = useState('0:00')
   const [volume, setVolume] = useState(0.7)
   const [downloading, setDownloading] = useState(false)
+  const [showVol, setShowVol] = useState(false)
+  const [showCard, setShowCard] = useState(false)
+  const [cardClosing, setCardClosing] = useState(false)
+  const [shuffle, setShuffle] = useState(false)
+  const [repeat, setRepeat] = useState('off')
 
   const audioRef = useRef(null)
-  const progressBarRef = useRef(null)
-  const volumeBarRef = useRef(null)
+  const barSeekRef = useRef(null)
+  const cardSeekRef = useRef(null)
+  const volBarVertRef = useRef(null)
 
   useEffect(() => { sessionStorage.setItem('rq', query) }, [query])
   useEffect(() => { sessionStorage.setItem('rr', JSON.stringify(results)) }, [results])
@@ -49,51 +55,109 @@ export default function App() {
     }
   }, [])
 
-  // Clear cached blobs on tab close
+  // Save playback position periodically
   useEffect(() => {
-    const clear = () => {
-      Object.keys(localStorage).filter(k => k.startsWith('blob_')).forEach(k => localStorage.removeItem(k))
+    const audio = audioRef.current
+    if (!audio) return
+    const save = () => {
+      if (activeItem && audio.currentTime > 0)
+        sessionStorage.setItem('rpos', audio.currentTime)
     }
-    window.addEventListener('beforeunload', clear)
-    return () => window.removeEventListener('beforeunload', clear)
+    audio.addEventListener('timeupdate', save)
+    return () => audio.removeEventListener('timeupdate', save)
+  }, [activeItem])
+
+  // Restore audio src from cache on mount
+  useEffect(() => {
+    if (!activeItem) return
+    const audio = audioRef.current
+    if (!audio) return
+    audio.volume = volume
+    const cached = localStorage.getItem(`blob_${activeItem.videoId}`)
+    if (cached && !audio.src) {
+      audio.src = cached
+      audio.load()
+      const savedPos = parseFloat(sessionStorage.getItem('rpos') || '0')
+      audio.addEventListener('loadedmetadata', () => {
+        if (savedPos > 0) audio.currentTime = savedPos
+      }, { once: true })
+    }
+  }, [])
+
+  // keep localStorage blob cache across sessions — server DB is the source of truth
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') closeCard() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   const drag = (barRef, onMove) => (e) => {
     e.preventDefault()
     const bar = barRef.current
     if (!bar) return
-
     const getPct = (clientX) => {
       const rect = bar.getBoundingClientRect()
       return Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1)
     }
-
-    onMove(getPct(e.clientX))
-
-    const handleMove = (ev) => onMove(getPct(ev.clientX))
-    const handleUp = () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
+    const getX = (ev) => ev.touches ? ev.touches[0].clientX : ev.clientX
+    onMove(getPct(getX(e)))
+    const move = (ev) => onMove(getPct(getX(ev)))
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
     }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    window.addEventListener('touchmove', move, { passive: false })
+    window.addEventListener('touchend', up)
   }
 
-  const handleSeek = drag(progressBarRef, (pct) => {
+  const seekFn = (pct) => {
     const audio = audioRef.current
     if (!audio || !audio.duration) return
     audio.currentTime = pct * audio.duration
     setProgress(pct * 100)
-  })
+  }
 
-  const handleVolume = drag(volumeBarRef, (pct) => {
-    if (audioRef.current) audioRef.current.volume = pct
-    setVolume(pct)
+  const handleBarSeek = drag(barSeekRef, seekFn)
+  const handleCardSeek = drag(cardSeekRef, seekFn)
+  const dragVertical = (barRef, onMove) => (e) => {
+    e.preventDefault()
+    const bar = barRef.current
+    if (!bar) return
+    const getPct = (clientY) => {
+      const rect = bar.getBoundingClientRect()
+      return Math.min(Math.max((clientY - rect.top) / rect.height, 0), 1)
+    }
+    const getY = (ev) => ev.touches ? ev.touches[0].clientY : ev.clientY
+    onMove(getPct(getY(e)))
+    const move = (ev) => onMove(getPct(getY(ev)))
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    window.addEventListener('touchmove', move, { passive: false })
+    window.addEventListener('touchend', up)
+  }
+
+  const handleVolume = dragVertical(volBarVertRef, (pct) => {
+    const v = 1 - pct  // invert: top = loud, bottom = quiet
+    if (audioRef.current) audioRef.current.volume = v
+    setVolume(v)
   })
 
   const search = async (q = query) => {
     q = q.trim()
     if (!q) return
+    // if same query and results already loaded, skip fetch
+    if (q.toLowerCase() === query.toLowerCase() && results.length > 0) return
     setQuery(q)
     setLoading(true)
     setError('')
@@ -118,11 +182,10 @@ export default function App() {
     setProgress(0)
     setCurrentTime('0:00')
     setDuration('0:00')
+    sessionStorage.removeItem('rpos')
 
     const cacheKey = `blob_${item.videoId}`
     const audio = audioRef.current
-
-    // Check localStorage cache first
     const cached = localStorage.getItem(cacheKey)
     if (cached) {
       audio.src = cached
@@ -132,7 +195,6 @@ export default function App() {
       return
     }
 
-    // Download as blob
     setDownloading(true)
     setIsPlaying(false)
     try {
@@ -143,8 +205,7 @@ export default function App() {
       const reader = new FileReader()
       reader.onloadend = () => {
         const base64 = reader.result
-        try { localStorage.setItem(cacheKey, base64) } catch (e) {
-          // localStorage full — clear old blobs and retry
+        try { localStorage.setItem(cacheKey, base64) } catch {
           Object.keys(localStorage).filter(k => k.startsWith('blob_') && k !== cacheKey).forEach(k => localStorage.removeItem(k))
           try { localStorage.setItem(cacheKey, base64) } catch (_) {}
         }
@@ -173,6 +234,35 @@ export default function App() {
     setLiked(prev => ({ ...prev, [videoId]: !prev[videoId] }))
   }
 
+  const playNext = () => {
+    if (!results.length) return
+    const idx = results.findIndex(r => r.videoId === activeItem?.videoId)
+    let next
+    if (shuffle) {
+      const others = results.filter(r => r.videoId !== activeItem?.videoId)
+      next = others[Math.floor(Math.random() * others.length)]
+    } else {
+      next = results[(idx + 1) % results.length]
+    }
+    if (next) play(next)
+  }
+
+  const playPrev = () => {
+    if (!results.length) return
+    const audio = audioRef.current
+    if (audio && audio.currentTime > 3) { audio.currentTime = 0; return }
+    const idx = results.findIndex(r => r.videoId === activeItem?.videoId)
+    const prev = results[(idx - 1 + results.length) % results.length]
+    if (prev) play(prev)
+  }
+
+  const closeCard = () => {
+    setCardClosing(true)
+    setTimeout(() => { setShowCard(false); setCardClosing(false); setShowVol(false) }, 380)
+  }
+
+  const cycleRepeat = () => setRepeat(r => r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')
+
   return (
     <div className="layout">
       <div className="main">
@@ -183,7 +273,6 @@ export default function App() {
             <img src="/logo.png" alt="" className="topbar-logo-icon" />
             <span className="topbar-logo-text">Relaxify</span>
           </div>
-
           <div className="topbar-right">
             <div className="search-wrap">
               <span className="material-symbols-outlined">search</span>
@@ -269,67 +358,167 @@ export default function App() {
           setIsPlaying(false)
         }}
         style={{ display: 'none' }}
+        onEnded={() => {
+          if (repeat === 'one') { audioRef.current.currentTime = 0; audioRef.current.play() }
+          else if (repeat === 'all' || shuffle) playNext()
+          else {
+            const idx = results.findIndex(r => r.videoId === activeItem?.videoId)
+            if (idx < results.length - 1) playNext()
+            else setIsPlaying(false)
+          }
+        }}
       />
 
-      {/* Player */}
-      <div className={`player${activeItem ? '' : ' hidden'}`}>
-
-        {/* Track info */}
-        <div className="player-track">
-          {activeItem && <img src={activeItem.thumbnail} alt="" />}
-          <div className="player-track-info">
-            <p className="player-track-title">{activeItem?.title}</p>
-            <p className="player-track-ch">{activeItem?.channel}</p>
-          </div>
-          <span
-            className="material-symbols-outlined like-btn"
-            style={{ fontVariationSettings: liked[activeItem?.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem?.videoId] ? '#f2ca50' : '#555', marginLeft: 8 }}
-            onClick={e => activeItem && toggleLike(e, activeItem.videoId)}
-          >favorite</span>
+      {/* ── Bottom Player Bar ── */}
+      <div className={`player-bar${activeItem ? ' visible' : ''}`}>
+        {/* thin seek line across the very top of the bar */}
+        <div className="bar-progress" ref={barSeekRef} onMouseDown={handleBarSeek} onTouchStart={handleBarSeek}>
+          <div className="bar-progress-fill" style={{ width: `${progress}%` }} />
         </div>
 
-        {/* Controls + progress */}
-        <div className="player-center">
-          {streamError && <p className="stream-err">{streamError}</p>}
-          <div className="player-btns">
-            <button className="ctrl-btn"><span className="material-symbols-outlined">shuffle</span></button>
-            <button className="ctrl-btn"><span className="material-symbols-outlined">skip_previous</span></button>
-            <button className="play-btn" onClick={togglePlay} disabled={downloading}>
-              <span className="material-symbols-outlined spin" style={{ fontVariationSettings: "'FILL' 1", animationDuration: downloading ? '0.8s' : '0s', animation: downloading ? 'spin 0.8s linear infinite' : 'none' }}>
-                {downloading ? 'autorenew' : isPlaying ? 'pause' : 'play_arrow'}
-              </span>
-            </button>
-            <button className="ctrl-btn"><span className="material-symbols-outlined">skip_next</span></button>
-            <button className="ctrl-btn"><span className="material-symbols-outlined">repeat</span></button>
-          </div>
-          <div className="player-progress">
-            <span className="prog-time">{currentTime}</span>
-            <div className="prog-bar" ref={progressBarRef} onMouseDown={handleSeek}>
-              <div className="prog-track">
-                <div className="prog-fill" style={{ width: `${progress}%` }} />
+        {/* left: thumb + info → click opens card */}
+        <div className="bar-left" onClick={() => activeItem && setShowCard(true)}>
+          <div className="bar-thumb-wrap">
+            {activeItem && <img src={activeItem.thumbnail} alt="" />}
+            {isPlaying && (
+              <div className="bar-eq">
+                {[1,2,3].map(i => <span key={i} className="bar-eq-bar" style={{ animationDelay: `${i * 0.18}s` }} />)}
               </div>
-              <div className="prog-dot" style={{ left: `${progress}%` }} />
-            </div>
-            <span className="prog-time">{duration}</span>
+            )}
+          </div>
+          <div className="bar-info">
+            <p className="bar-title">{activeItem?.title}</p>
+            <p className="bar-ch">{activeItem?.channel}</p>
           </div>
         </div>
 
-        {/* Volume */}
-        <div className="player-right">
-          <button className="ctrl-btn">
-            <span className="material-symbols-outlined">
-              {volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'}
+        {/* center: prev + play/pause + next */}
+        <div className="bar-center">
+          <button className="bar-skip" onClick={playPrev}><span className="material-symbols-outlined">skip_previous</span></button>
+          <button className="bar-play" onClick={togglePlay} disabled={downloading}>
+            <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1", animation: downloading ? 'spin 0.8s linear infinite' : 'none' }}>
+              {downloading ? 'autorenew' : isPlaying ? 'pause' : 'play_arrow'}
             </span>
           </button>
-          <div className="vol-bar" ref={volumeBarRef} onMouseDown={handleVolume}>
-            <div className="vol-track">
-              <div className="vol-fill" style={{ width: `${volume * 100}%` }} />
-            </div>
-            <div className="vol-dot" style={{ left: `${volume * 100}%` }} />
-          </div>
+          <button className="bar-skip" onClick={playNext}><span className="material-symbols-outlined">skip_next</span></button>
         </div>
 
+        {/* right: like + expand */}
+        <div className="bar-right">
+          <span
+            className="material-symbols-outlined bar-like"
+            style={{ fontVariationSettings: liked[activeItem?.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem?.videoId] ? '#f2ca50' : '#3a3a3a' }}
+            onClick={e => activeItem && toggleLike(e, activeItem.videoId)}
+          >favorite</span>
+          <button className="bar-expand" onClick={() => setShowCard(true)}>
+            <span className="material-symbols-outlined">expand_less</span>
+          </button>
+        </div>
+
+        {streamError && <p className="bar-err">{streamError}</p>}
       </div>
+
+      {/* ── Now Playing Card ── */}
+      {showCard && activeItem && (
+        <div className={`np-overlay${cardClosing ? ' closing' : ''}`} onClick={closeCard}>
+          <div className={`np-card${cardClosing ? ' closing' : ''}`} onClick={e => e.stopPropagation()}>
+
+            {/* blurred album art bg */}
+            <div className="np-card-bg" style={{ backgroundImage: `url(${activeItem.thumbnail})` }} />
+            <div className="np-card-dim" />
+
+            <div className="np-card-body">
+              {/* drag handle */}
+              <div className="np-drag-handle" />
+
+              {/* header */}
+              <div className="np-header">
+                <button className="np-close" onClick={closeCard}>
+                  <span className="material-symbols-outlined">keyboard_arrow_down</span>
+                </button>
+                <span className="np-label">Now Playing</span>
+                <div className="np-header-right">
+                  <div className="np-vol-wrap">
+                    {showVol && (
+                      <div className="np-vol-popup">
+                        <span className="np-vol-pct">{Math.round(volume * 100)}</span>
+                        <div className="np-vol-vert" ref={volBarVertRef} onMouseDown={handleVolume} onTouchStart={handleVolume}>
+                          <div className="np-vol-vert-rail" />
+                          <div className="np-vol-vert-fill" style={{ height: `${volume * 100}%` }}>
+                            <div className="np-vol-vert-thumb" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <button className="np-vol-btn" onClick={() => setShowVol(v => !v)}>
+                      <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        {volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'}
+                      </span>
+                    </button>
+                  </div>
+                  <span
+                    className="material-symbols-outlined np-like"
+                    style={{ fontVariationSettings: liked[activeItem.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.35)' }}
+                    onClick={e => toggleLike(e, activeItem.videoId)}
+                  >favorite</span>
+                </div>
+              </div>
+
+              {/* vinyl disc */}
+              <div className="np-art-wrap">
+                <div className={`np-disc${isPlaying ? ' spinning' : ''}`}>
+                  <img src={activeItem.thumbnail} alt="" className="np-disc-img" />
+                  <div className="np-disc-grooves" />
+                  <div className="np-disc-hole" />
+                </div>
+              </div>
+
+              {/* track info */}
+              <div className="np-meta">
+                <p className="np-title">{activeItem.title}</p>
+                <p className="np-ch">{activeItem.channel}</p>
+              </div>
+
+              {/* seek bar */}
+              <div className="np-seek-wrap">
+                <div className="np-seek" ref={cardSeekRef} onMouseDown={handleCardSeek} onTouchStart={handleCardSeek}>
+                  <div className="np-seek-rail" />
+                  <div className="np-seek-fill" style={{ width: `${progress}%` }}>
+                    <div className="np-seek-thumb" />
+                  </div>
+                </div>
+                <div className="np-times">
+                  <span>{currentTime}</span>
+                  <span>{duration}</span>
+                </div>
+              </div>
+
+              {/* controls */}
+              <div className="np-controls">
+                <button className={`np-btn-sm${shuffle ? ' np-btn-active' : ''}`} onClick={() => setShuffle(v => !v)}>
+                  <span className="material-symbols-outlined">shuffle</span>
+                </button>
+                <button className="np-btn-md" onClick={playPrev}>
+                  <span className="material-symbols-outlined">skip_previous</span>
+                </button>
+                <button className="np-btn-play" onClick={togglePlay} disabled={downloading}>
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1", animation: downloading ? 'spin 0.8s linear infinite' : 'none' }}>
+                    {downloading ? 'autorenew' : isPlaying ? 'pause' : 'play_arrow'}
+                  </span>
+                </button>
+                <button className="np-btn-md" onClick={playNext}>
+                  <span className="material-symbols-outlined">skip_next</span>
+                </button>
+                <button className={`np-btn-sm${repeat !== 'off' ? ' np-btn-active' : ''}`} onClick={cycleRepeat}>
+                  <span className="material-symbols-outlined">{repeat === 'one' ? 'repeat_one' : 'repeat'}</span>
+                </button>
+              </div>
+
+              {streamError && <p className="np-err">{streamError}</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

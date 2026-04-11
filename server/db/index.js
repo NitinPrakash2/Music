@@ -11,6 +11,13 @@ const initDB = async () => {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS audio_cache (
+      video_id   TEXT PRIMARY KEY,
+      audio_b64  TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
   console.log('[DB] Tables ready');
 };
 

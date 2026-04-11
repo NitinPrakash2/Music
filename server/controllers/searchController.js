@@ -11,7 +11,7 @@ const searchController = async (req, res) => {
     // Check cache
     const cached = await sql`
       SELECT results FROM search_cache
-      WHERE query = ${query} AND created_at > NOW() - INTERVAL '1 day'
+      WHERE query = ${query}
     `;
 
     if (cached.length > 0) {

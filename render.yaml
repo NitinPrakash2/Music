@@ -3,7 +3,7 @@ services:
     name: relaxify-server
     runtime: node
     rootDir: server
-    buildCommand: npm install && pip install yt-dlp
+    buildCommand: npm install && pip3 install -U yt-dlp
     startCommand: node server.js
     envVars:
       - key: NODE_ENV
