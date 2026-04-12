@@ -1,0 +1,9 @@
+{
+  "name": "relaxify",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cd server && node server.js",
+    "build": "cd server && npm install && pip install -U yt-dlp"
+  }
+}
