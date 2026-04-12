@@ -397,9 +397,9 @@ export default function App() {
     <div className="layout">
       <div className="main">
         <div className="topbar">
-          <div className="topbar-left" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
+          <div className="topbar-left" onClick={() => navigate('/')}>
             <img src="/logo.png" alt="" className="topbar-logo-icon" />
-            <span className="topbar-logo-text">Relaxify</span>
+            <span className="topbar-logo-text">Relax<span>ify</span></span>
           </div>
           <div className="topbar-center">
             <div className="topbar-search-wrapper">
@@ -486,7 +486,7 @@ export default function App() {
             </div>
           </div>
           <div className="topbar-right">
-            <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>Hi, {user?.name?.split(' ')[0]}</span>
+            <span className="topbar-user-name">Hi, {user?.name?.split(' ')[0]}</span>
             <button className="topbar-icon-btn" title="Logout" onClick={handleLogout}><span className="material-symbols-outlined">logout</span></button>
             <button className="topbar-icon-btn"><span className="material-symbols-outlined">notifications</span></button>
             <button className="topbar-icon-btn"><span className="material-symbols-outlined">settings</span></button>
