@@ -22,8 +22,8 @@ const streamController = async (req, res) => {
     '--no-playlist',
     '--no-warnings',
     '--no-check-certificates',
-    '--extractor-retries', '3',
-    '--extractor-args', 'youtube:player_client=ios,web',
+    '--extractor-retries', '5',
+    '--extractor-args', 'youtube:player_client=android,mweb;player_skip=webpage,configs',
     '-f', 'bestaudio/best',
   ];
 
