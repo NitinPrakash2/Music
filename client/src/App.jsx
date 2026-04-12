@@ -322,7 +322,7 @@ function AppInner() {
         const res = await fetch(url)
         if (!res.ok) throw new Error('Stream failed')
         const rawBlob = await res.blob()
-        const blob = new Blob([rawBlob], { type: 'audio/webm' })
+        const blob = new Blob([rawBlob], { type: rawBlob.type || 'audio/mpeg' })
         const blobUrl = URL.createObjectURL(blob)
         try {
           sessionStorage.setItem(cacheKey, blobUrl)

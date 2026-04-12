@@ -19,7 +19,7 @@ const streamController = async (req, res) => {
 
   const args = [
     '-m', 'yt_dlp',
-    '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
+    '-f', 'bestaudio/best',
     '--no-playlist',
     '--no-warnings',
     '--no-check-certificates',
@@ -52,7 +52,11 @@ const streamController = async (req, res) => {
       return;
     }
     const buffer = Buffer.concat(chunks);
-    res.setHeader('Content-Type', 'audio/webm');
+    // Detect format from first bytes
+    const isWebm = buffer[0] === 0x1a && buffer[1] === 0x45;
+    const isM4a = buffer[4] === 0x66 && buffer[5] === 0x74;
+    const contentType = isWebm ? 'audio/webm' : isM4a ? 'audio/mp4' : 'audio/mpeg';
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Length', buffer.length);
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'no-store');
