@@ -38,8 +38,10 @@ Edit `server/.env`:
 ```
 YOUTUBE_API_KEY=your_youtube_api_key_here
 DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+JWT_SECRET=your_strong_random_secret_here
 PORT=5000
 CLIENT_ORIGIN=http://localhost:5173
+NODE_ENV=development
 ```
 
 ---
@@ -71,6 +73,38 @@ Client runs at: http://localhost:5173
 
 ---
 
+## Deployment
+
+### Backend → Render
+
+1. Push your repo to GitHub
+2. Go to [render.com](https://render.com) → **New Web Service** → connect your repo
+3. Render auto-detects `render.yaml` — it will:
+   - Set root dir to `server/`
+   - Run `npm install && pip install -U yt-dlp`
+   - Start with `node server.js`
+4. In Render dashboard → **Environment**, add these secrets:
+   | Key | Value |
+   |-----|-------|
+   | `YOUTUBE_API_KEY` | your YouTube API key |
+   | `DATABASE_URL` | your Neon connection string |
+   | `JWT_SECRET` | a long random string |
+   | `CLIENT_ORIGIN` | your Vercel frontend URL (add after deploying frontend) |
+5. Deploy — note your Render URL (e.g. `https://relaxify-server.onrender.com`)
+
+### Frontend → Vercel
+
+1. Go to [vercel.com](https://vercel.com) → **New Project** → import your repo
+2. Set **Root Directory** to `client`
+3. Add environment variable:
+   | Key | Value |
+   |-----|-------|
+   | `VITE_API_URL` | your Render backend URL (e.g. `https://relaxify-server.onrender.com`) |
+4. Deploy — Vercel auto-runs `npm run build`
+5. Copy your Vercel URL and set it as `CLIENT_ORIGIN` in Render env vars, then redeploy Render
+
+---
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -90,19 +124,15 @@ Client runs at: http://localhost:5173
 ```
 Music/
 ├── client/               # React + Vite frontend
-│   └── src/
-│       └── App.jsx
+│   ├── src/
+│   │   └── App.jsx
+│   └── vercel.json       # SPA routing for Vercel
 ├── server/               # Express backend
 │   ├── controllers/
-│   │   ├── searchController.js
-│   │   └── streamController.js
 │   ├── db/
-│   │   └── index.js
 │   ├── routes/
-│   │   ├── search.js
-│   │   └── stream.js
-│   ├── index.js
-│   └── .env.example
+│   └── server.js
+├── render.yaml           # Render deployment config
 └── README.md
 ```
 
@@ -113,6 +143,6 @@ Music/
 1. **Home Page** → Displays trending songs, top Hindi/English/Punjabi songs, romantic & party playlists
 2. **Real-time Updates** → Playlists refresh every hour automatically
 3. **Click Playlist** → View all songs in that category
-4. **Select Song** → `/api/stream` spawns `yt-dlp` → audio piped to browser
-5. **HTML `<audio>`** → Plays the stream in real-time with full player controls
+4. **Select Song** → `/api/stream` spawns `yt-dlp` → full audio fetched and cached in localStorage for seekable playback
+5. **Auto-advance** → Song ends → cache cleared → next song fetched and cached automatically
 6. **Search** → Custom search with YouTube Data API v3 caching

@@ -3,13 +3,11 @@ services:
     name: relaxify-server
     runtime: node
     rootDir: server
-    buildCommand: npm install && pip3 install -U yt-dlp
+    buildCommand: npm install && pip install -U yt-dlp
     startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 5000
       - key: YOUTUBE_API_KEY
         sync: false
       - key: DATABASE_URL
