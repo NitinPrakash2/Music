@@ -19,10 +19,12 @@ const streamController = async (req, res) => {
 
   const args = [
     '-m', 'yt_dlp',
-    '-f', 'bestaudio/best',
     '--no-playlist',
     '--no-warnings',
     '--no-check-certificates',
+    '--extractor-retries', '3',
+    '--extractor-args', 'youtube:player_client=ios,web',
+    '-f', 'bestaudio/best',
   ];
 
   if (cookiesFile) {

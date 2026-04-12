@@ -2,7 +2,7 @@ services:
   - type: web
     name: relaxify-server
     runtime: node
-    buildCommand: npm install && pip install -U yt-dlp
+    buildCommand: npm install && pip install -U yt-dlp && python3 -m yt_dlp --version
     startCommand: node server/server.js
     envVars:
       - key: NODE_ENV
@@ -14,4 +14,6 @@ services:
       - key: CLIENT_ORIGIN
         sync: false
       - key: JWT_SECRET
+        sync: false
+      - key: YOUTUBE_COOKIES
         sync: false
