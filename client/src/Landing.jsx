@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 
-export default function Landing({ onEnter }) {
+export default function Landing({ onEnter, onSignIn }) {
   useEffect(() => {
     const style = document.createElement('style')
     style.id = 'reveal-styles'
@@ -538,7 +538,7 @@ export default function Landing({ onEnter }) {
           <a href="#features">Features</a>
           <a href="#faq">FAQ</a>
         </nav>
-        <button className="header-btn" onClick={onEnter}>Launch Player</button>
+        <button className="header-btn" onClick={onSignIn || onEnter}>Sign In</button>
       </header>
 
       {/* HERO */}

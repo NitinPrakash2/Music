@@ -3,6 +3,7 @@ import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
 import Landing from './Landing'
+import Auth from './Auth'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -14,7 +15,9 @@ const fmt = (s) => {
 }
 
 export default function App() {
-  const [landed, setLanded] = useState(false)
+  const [landed, setLanded] = useState(() => sessionStorage.getItem('rx_landed') === '1')
+  const [showAuth, setShowAuth] = useState(() => sessionStorage.getItem('rx_auth') === '1')
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('rx_user') || 'null'))
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/')
   const [activeItem, setActiveItem] = useState(() => JSON.parse(sessionStorage.getItem('ra') || 'null'))
   const [isPlaying, setIsPlaying] = useState(false)
@@ -330,7 +333,19 @@ export default function App() {
 
   const cycleRepeat = () => setRepeat(r => r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')
 
-  const handleEnter = () => setLanded(true)
+  const handleEnter = () => { sessionStorage.setItem('rx_landed', '1'); setLanded(true) }
+
+  const handleAuth = (u) => { setUser(u); sessionStorage.setItem('rx_landed', '1'); sessionStorage.removeItem('rx_auth'); setLanded(true) }
+
+  const handleLogout = () => {
+    localStorage.removeItem('rx_token')
+    localStorage.removeItem('rx_user')
+    sessionStorage.removeItem('rx_landed')
+    sessionStorage.removeItem('rx_auth')
+    setUser(null)
+    setLanded(false)
+    setShowAuth(false)
+  }
 
   const navigate = (path) => {
     if (path === '/') {
@@ -353,7 +368,8 @@ export default function App() {
     content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
   }
 
-  if (!landed) return <Landing onEnter={handleEnter} />
+  if (!user && (landed || showAuth)) return <Auth onAuth={handleAuth} onBack={() => { sessionStorage.removeItem('rx_auth'); sessionStorage.removeItem('rx_landed'); setLanded(false); setShowAuth(false); }} />
+  if (!landed) return <Landing onEnter={handleEnter} onSignIn={() => { sessionStorage.setItem('rx_auth', '1'); setShowAuth(true); setLanded(true); }} />
 
   return (
     <div className="layout">
@@ -448,6 +464,8 @@ export default function App() {
             </div>
           </div>
           <div className="topbar-right">
+            <span style={{ fontSize: 13, color: '#666', fontWeight: 500 }}>Hi, {user?.name?.split(' ')[0]}</span>
+            <button className="topbar-icon-btn" title="Logout" onClick={handleLogout}><span className="material-symbols-outlined">logout</span></button>
             <button className="topbar-icon-btn"><span className="material-symbols-outlined">notifications</span></button>
             <button className="topbar-icon-btn"><span className="material-symbols-outlined">settings</span></button>
           </div>
