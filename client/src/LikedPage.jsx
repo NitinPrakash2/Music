@@ -7,6 +7,11 @@ export default function LikedPage({ onPlayTrack, activeItem, isPlaying, download
 
   useEffect(() => {
     apiFetch('/api/liked/songs').then(r => r.json()).then(d => { setSongs(d.songs || []); setLoading(false) }).catch(() => setLoading(false))
+  }, [])
+
+  // update local list when a song is unliked without re-fetching
+  useEffect(() => {
+    setSongs(prev => prev.filter(s => liked[s.video_id]))
   }, [liked])
 
   const P = {

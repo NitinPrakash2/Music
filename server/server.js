@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 const { initDB } = require('./db');
 
 const searchRoute = require('./routes/search');
@@ -23,6 +24,18 @@ app.use(cors({
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json());
 
+// Rate limit auth endpoints — 20 attempts per 15 min per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/signup', authLimiter);
+
 app.use('/api/search', searchRoute);
 app.use('/api/stream', streamRoute);
 app.use('/api/playlists', playlistRoute);
@@ -33,19 +46,6 @@ app.use('/api/liked', likedRoute);
 app.use('/api/user-playlists', userPlaylistsRoute);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
-
-app.get('/api/cache-stats', async (_, res) => {
-  try {
-    const [searches, audio] = await Promise.all([
-      require('./db').sql`SELECT COUNT(*) FROM search_cache`,
-      require('./db').sql`SELECT COUNT(*) FROM audio_cache`
-    ])
-    res.json({
-      cached_searches: parseInt(searches[0].count),
-      cached_audio: parseInt(audio[0].count),
-    })
-  } catch (e) { res.status(500).json({ error: e.message }) }
-});
 
 app.use((err, req, res, _next) => {
   console.error('[UNHANDLED ERROR]', err.message);

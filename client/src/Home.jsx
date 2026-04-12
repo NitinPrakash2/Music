@@ -3,13 +3,68 @@ import TrackMenu from './TrackMenu';
 
 const API = import.meta.env.VITE_API_URL || '';
 
+// Per-card wrapper that holds its own anchorRef
+function TrackCard({ item, activeItem, isPlaying, downloading, liked, onPlayTrack, onToggleLike, playlistKey, menuOpen, setMenuOpen }) {
+  const btnRef = useRef(null)
+  const isActive = activeItem?.videoId === item.videoId
+  const isOpen = menuOpen === item.videoId
+
+  return (
+    <div style={{ position: 'relative' }}
+      className={`track-card${isActive ? ' active' : ''}${isActive && downloading ? ' loading' : ''}`}>
+
+      {/* Thumbnail */}
+      <div className="track-thumb" onClick={() => onPlayTrack(item)}>
+        <img src={item.thumbnail} alt={item.title} />
+        <div className="track-overlay">
+          <div className="play-icon">
+            {isActive && downloading
+              ? <span className="material-symbols-outlined spin" style={{ color: '#1a1000', fontSize: 22 }}>autorenew</span>
+              : <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
+                  {isActive && isPlaying ? 'pause' : 'play_arrow'}
+                </span>}
+          </div>
+          <span className="material-symbols-outlined like-btn"
+            style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#fff' }}
+            onClick={e => onToggleLike(e, item.videoId, item)}>favorite</span>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="track-info" style={{ cursor: 'pointer' }} onClick={() => window.location.hash = `/playlist/${playlistKey}`}>
+        <p className="track-title">{item.title}</p>
+        <p className="track-channel">{item.channel}</p>
+      </div>
+
+      {/* ⋮ button — outside thumb, uses ref for portal positioning */}
+      <button ref={btnRef}
+        onClick={e => { e.stopPropagation(); setMenuOpen(isOpen ? null : item.videoId) }}
+        className="track-more-btn"
+        style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', zIndex: 4, padding: 0 }}>
+        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>more_vert</span>
+      </button>
+
+      {/* Menu portal */}
+      {isOpen && (
+        <TrackMenu
+          item={item}
+          anchorRef={btnRef}
+          onClose={() => setMenuOpen(null)}
+          liked={liked}
+          onToggleLike={onToggleLike}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike }) {
   const [playlists, setPlaylists] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(null); // videoId of open menu
+  const [menuOpen, setMenuOpen] = useState(null);
   const homeRef = useRef(null);
 
   useEffect(() => {
@@ -93,7 +148,9 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
         <div className="sync-controls">
           {lastSync && (
             <div className="sync-status">
-              {syncing ? (<><span className="material-symbols-outlined spin">sync</span><span>Syncing...</span></>) : (<><span className="material-symbols-outlined">check_circle</span><span>Last synced: {lastSync.toLocaleTimeString()}</span></>)}
+              {syncing
+                ? <><span className="material-symbols-outlined spin">sync</span><span>Syncing...</span></>
+                : <><span className="material-symbols-outlined">check_circle</span><span>Last synced: {lastSync.toLocaleTimeString()}</span></>}
             </div>
           )}
           <button className="refresh-btn" onClick={fetchPlaylists} disabled={syncing}>
@@ -112,33 +169,19 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
             </div>
             <div className="playlist-grid">
               {playlists[key].map((item, idx) => (
-                <div key={item.videoId} style={{ animationDelay: `${idx * 50}ms`, position: 'relative' }}
-                  className={`track-card${activeItem?.videoId === item.videoId ? ' active' : ''}${activeItem?.videoId === item.videoId && downloading ? ' loading' : ''}`}>
-                  <div className="track-thumb" onClick={() => onPlayTrack(item)}>
-                    <img src={item.thumbnail} alt={item.title} />
-                    <div className="track-overlay">
-                      <div className="play-icon">
-                        {activeItem?.videoId === item.videoId && downloading
-                          ? <span className="material-symbols-outlined spin" style={{ color: '#1a1000', fontSize: 22 }}>autorenew</span>
-                          : <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>{activeItem?.videoId === item.videoId && isPlaying ? 'pause' : 'play_arrow'}</span>}
-                      </div>
-                      <span className="material-symbols-outlined like-btn"
-                        style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#fff' }}
-                        onClick={e => onToggleLike(e, item.videoId, item)}>favorite</span>
-                    </div>
-                  </div>
-                  <div className="track-info" style={{ cursor: 'pointer' }} onClick={() => window.location.hash = `/playlist/${key}`}>
-                    <p className="track-title">{item.title}</p>
-                    <p className="track-channel">{item.channel}</p>
-                  </div>
-                  {/* More options button */}
-                  <button onClick={e => { e.stopPropagation(); setMenuOpen(menuOpen === item.videoId ? null : item.videoId) }}
-                    style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', opacity: 0, transition: 'opacity 0.2s', zIndex: 3 }}
-                    className="track-more-btn">
-                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>more_vert</span>
-                  </button>
-                  {menuOpen === item.videoId && <TrackMenu item={item} onClose={() => setMenuOpen(null)} />}
-                </div>
+                <TrackCard
+                  key={item.videoId}
+                  item={item}
+                  activeItem={activeItem}
+                  isPlaying={isPlaying}
+                  downloading={downloading}
+                  liked={liked}
+                  onPlayTrack={onPlayTrack}
+                  onToggleLike={onToggleLike}
+                  playlistKey={key}
+                  menuOpen={menuOpen}
+                  setMenuOpen={setMenuOpen}
+                />
               ))}
             </div>
           </div>

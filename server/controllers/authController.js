@@ -2,7 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { sql } = require('../db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'relaxify_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) { console.error('[FATAL] JWT_SECRET env var is not set'); process.exit(1); }
 
 const signup = async (req, res) => {
   const { name, email, password } = req.body;

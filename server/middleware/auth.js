@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'relaxify_secret_key';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) { console.error('[FATAL] JWT_SECRET env var is not set'); process.exit(1); }
 
 module.exports = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
