@@ -2,8 +2,25 @@
   "name": "relaxify",
   "version": "1.0.0",
   "private": true,
+  "main": "server/server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
-    "start": "bash start.sh",
-    "build": "cd server && npm install && pip install -U yt-dlp"
+    "start": "node server/server.js",
+    "build": "pip install -U yt-dlp",
+    "dev": "nodemon server/server.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "axios": "^1.15.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1"
   }
 }
