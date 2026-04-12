@@ -15,11 +15,9 @@ const streamController = async (req, res) => {
     url,
   ]);
 
-  res.setHeader('Content-Type', 'audio/webm');
-  res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Access-Control-Allow-Origin', process.env.CLIENT_ORIGIN || 'http://localhost:5173');
+  const chunks = [];
 
-  ytdlp.stdout.pipe(res);
+  ytdlp.stdout.on('data', chunk => chunks.push(chunk));
 
   ytdlp.stderr.on('data', d => console.error('[YT-DLP]', d.toString().trim()));
 
@@ -29,8 +27,16 @@ const streamController = async (req, res) => {
   });
 
   ytdlp.on('close', code => {
-    if (code !== 0) console.error(`[YT-DLP] exited with code ${code}`);
-    if (!res.writableEnded) res.end();
+    if (code !== 0 && !chunks.length) {
+      if (!res.headersSent) return res.status(500).json({ error: 'yt-dlp failed' });
+      return;
+    }
+    const buffer = Buffer.concat(chunks);
+    res.setHeader('Content-Type', 'audio/webm');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(buffer);
   });
 
   req.on('close', () => ytdlp.kill('SIGTERM'));

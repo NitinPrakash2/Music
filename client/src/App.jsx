@@ -300,6 +300,7 @@ function AppInner() {
 
     const startPlayback = async (src) => {
       audio.src = src
+      audio.preload = 'auto'
       audio.load()
       try {
         await audio.play()
