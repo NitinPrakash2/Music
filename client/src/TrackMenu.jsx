@@ -1,29 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
-import { apiFetch } from './api'
+import { usePlaylists } from './PlaylistContext'
 
 export default function TrackMenu({ item, onClose }) {
-  const [playlists, setPlaylists] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { playlists, loaded, fetchPlaylists, addSong } = usePlaylists()
   const [added, setAdded] = useState({})
   const ref = useRef(null)
 
   useEffect(() => {
-    apiFetch('/api/user-playlists').then(r => r.json()).then(d => {
-      setPlaylists(d.playlists || [])
-      setLoading(false)
-    }).catch(() => setLoading(false))
-
+    if (!loaded) fetchPlaylists()
     const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
     setTimeout(() => document.addEventListener('mousedown', onClick), 0)
     return () => document.removeEventListener('mousedown', onClick)
   }, [])
 
-  const addToPlaylist = async (e, playlistId) => {
+  const handleAdd = async (e, playlistId) => {
     e.stopPropagation()
+    if (added[playlistId]) return
     try {
-      await apiFetch(`/api/user-playlists/${playlistId}/songs`, {
-        method: 'POST',
-        body: JSON.stringify({ videoId: item.videoId, title: item.title, thumbnail: item.thumbnail, channel: item.channel })
+      await addSong(playlistId, {
+        videoId: item.videoId,
+        title: item.title,
+        thumbnail: item.thumbnail,
+        channel: item.channel,
       })
       setAdded(prev => ({ ...prev, [playlistId]: true }))
     } catch {}
@@ -42,18 +40,17 @@ export default function TrackMenu({ item, onClose }) {
       <div style={{ padding: '6px 14px 8px', fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: 4 }}>
         Add to Playlist
       </div>
-      {loading ? (
+      {!loaded ? (
         <div style={{ padding: '10px 14px', fontSize: 12, color: '#555' }}>Loading...</div>
       ) : playlists.length === 0 ? (
         <div style={{ padding: '10px 14px', fontSize: 12, color: '#555' }}>No playlists yet</div>
       ) : playlists.map(p => (
         <div key={p.id}
-          onClick={e => !added[p.id] && addToPlaylist(e, p.id)}
+          onClick={e => handleAdd(e, p.id)}
           style={{
             display: 'flex', alignItems: 'center', gap: 10,
             padding: '9px 14px', cursor: added[p.id] ? 'default' : 'pointer',
-            transition: 'background 0.15s',
-            background: 'transparent',
+            transition: 'background 0.15s', background: 'transparent',
           }}
           onMouseEnter={e => { if (!added[p.id]) e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>

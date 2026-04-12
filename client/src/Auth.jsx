@@ -26,8 +26,8 @@ export default function Auth({ onAuth, onBack }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
-      sessionStorage.setItem('rx_token', data.token);
-      sessionStorage.setItem('rx_user', JSON.stringify(data.user));
+      localStorage.setItem('rx_token', data.token);
+      localStorage.setItem('rx_user', JSON.stringify(data.user));
       onAuth(data.user);
     } catch (err) {
       setError(err.message);

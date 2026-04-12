@@ -60,8 +60,11 @@ const me = async (req, res) => {
 const updateAccount = async (req, res) => {
   const { name, currentPassword, newPassword } = req.body;
   if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
+  if (newPassword && newPassword.length < 6)
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
   try {
     const [user] = await sql`SELECT * FROM users WHERE id = ${req.user.id}`;
+    if (!user) return res.status(404).json({ error: 'User not found' });
     const match = await bcrypt.compare(currentPassword, user.password);
     if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
     const updatedName = name?.trim() || user.name;
@@ -74,7 +77,13 @@ const updateAccount = async (req, res) => {
 };
 
 const deleteAccount = async (req, res) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'Password is required to delete account' });
   try {
+    const [user] = await sql`SELECT * FROM users WHERE id = ${req.user.id}`;
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Incorrect password' });
     await sql`DELETE FROM users WHERE id = ${req.user.id}`;
     res.json({ success: true });
   } catch (err) {

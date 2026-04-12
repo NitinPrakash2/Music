@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import React from 'react'
 import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
@@ -10,9 +9,9 @@ import Landing from './Landing'
 import Auth from './Auth'
 import Sidebar from './Sidebar'
 import { apiFetch } from './api'
+import { PlaylistProvider, usePlaylists } from './PlaylistContext'
 
 const API = import.meta.env.VITE_API_URL || ''
-export const PlaylistContext = React.createContext(null)
 
 const fmt = (s) => {
   if (!s || isNaN(s)) return '0:00'
@@ -21,13 +20,14 @@ const fmt = (s) => {
   return `${m}:${sec}`
 }
 
-export default function App() {
-  const [landed, setLanded] = useState(() => sessionStorage.getItem('rx_landed') === '1')
-  const [showAuth, setShowAuth] = useState(() => sessionStorage.getItem('rx_auth') === '1')
-  const [user, setUser] = useState(() => JSON.parse(sessionStorage.getItem('rx_user') || 'null'))
+function AppInner() {
+  const { fetchPlaylists, reset: resetPlaylists } = usePlaylists()
+  const [landed, setLanded] = useState(() => !!localStorage.getItem('rx_token'))
+  const [showAuth, setShowAuth] = useState(false)
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('rx_user') || 'null'))
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/')
-  const [activeItem, setActiveItem] = useState(() => JSON.parse(sessionStorage.getItem('ra') || 'null'))
+  const [activeItem, setActiveItem] = useState(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [streamError, setStreamError] = useState('')
   const [liked, setLiked] = useState({})
@@ -60,16 +60,14 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  useEffect(() => { sessionStorage.setItem('ra', JSON.stringify(activeItem)) }, [activeItem])
-
   useEffect(() => {
     if (user) {
-      // Verify token is still valid on every app load
       apiFetch('/api/auth/me').then(r => {
         if (!r.ok) handleLogout()
         else {
           fetchSearchHistory()
           fetchLiked()
+          fetchPlaylists()
         }
       }).catch(() => handleLogout())
     }
@@ -136,30 +134,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const audio = audioRef.current
-    if (!audio) return
-    const save = () => {
-      if (activeItem && audio.currentTime > 0)
-        sessionStorage.setItem('rpos', audio.currentTime)
-    }
-    audio.addEventListener('timeupdate', save)
-    return () => audio.removeEventListener('timeupdate', save)
-  }, [activeItem])
-
-  useEffect(() => {
-    if (!activeItem) return
-    const audio = audioRef.current
-    if (!audio) return
-    audio.volume = volume
-    const cached = localStorage.getItem(`blob_${activeItem.videoId}`)
-    if (cached && !audio.src) {
-      audio.src = cached
-      audio.load()
-      const savedPos = parseFloat(sessionStorage.getItem('rpos') || '0')
-      audio.addEventListener('loadedmetadata', () => {
-        if (savedPos > 0) audio.currentTime = savedPos
-      }, { once: true })
-    }
+    if (audioRef.current) audioRef.current.volume = volume
   }, [])
 
   useEffect(() => {
@@ -270,42 +245,20 @@ export default function App() {
     setProgress(0)
     setCurrentTime('0:00')
     setDuration('0:00')
-    sessionStorage.removeItem('rpos')
 
-    const cacheKey = `blob_${item.videoId}`
     const audio = audioRef.current
-    const cached = localStorage.getItem(cacheKey)
-    if (cached) {
-      audio.src = cached
-      audio.load()
-      audio.play().catch(e => { setStreamError(e.message); setIsPlaying(false) })
-      setIsPlaying(true)
-      return
-    }
-
     setDownloading(true)
     setIsPlaying(false)
     try {
       const url = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}`
-      const res = await fetch(url)
-      if (!res.ok) throw new Error('Stream failed')
-      const blob = await res.blob()
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const base64 = reader.result
-        try { localStorage.setItem(cacheKey, base64) } catch {
-          Object.keys(localStorage).filter(k => k.startsWith('blob_') && k !== cacheKey).forEach(k => localStorage.removeItem(k))
-          try { localStorage.setItem(cacheKey, base64) } catch (_) {}
-        }
-        audio.src = base64
-        audio.load()
-        audio.play().catch(e => { setStreamError(e.message); setIsPlaying(false) })
-        setIsPlaying(true)
-        setDownloading(false)
-      }
-      reader.readAsDataURL(blob)
+      audio.src = url
+      audio.load()
+      await audio.play()
+      setIsPlaying(true)
     } catch (e) {
       setStreamError(e.message)
+      setIsPlaying(false)
+    } finally {
       setDownloading(false)
     }
   }
@@ -358,27 +311,27 @@ export default function App() {
 
   const cycleRepeat = () => setRepeat(r => r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')
 
-  const handleEnter = () => { sessionStorage.setItem('rx_landed', '1'); setLanded(true) }
+  const handleEnter = () => { setLanded(true) }
 
   const handleAuth = (u) => {
-    Object.keys(localStorage).filter(k => k.startsWith('blob_')).forEach(k => localStorage.removeItem(k))
+    // clear any previous user's blob cache
     setUser(u)
-    sessionStorage.setItem('rx_landed', '1')
-    sessionStorage.removeItem('rx_auth')
     setLanded(true)
+    setShowAuth(false)
     setRecentSearches([])
     setLiked({})
     setSearchQuery('')
     setSearchSuggestions([])
     setActiveItem(null)
-    // fetch this user's data fresh from DB
-    setTimeout(() => { fetchLiked(); fetchSearchHistory() }, 100)
+    setTimeout(() => { fetchLiked(); fetchSearchHistory(); fetchPlaylists() }, 100)
   }
 
   const handleLogout = () => {
-    sessionStorage.clear()
-    // clear only blob cache keys from localStorage, keep nothing else
-    Object.keys(localStorage).filter(k => k.startsWith('blob_')).forEach(k => localStorage.removeItem(k))
+    // wipe all user data from storage
+    localStorage.removeItem('rx_token')
+    localStorage.removeItem('rx_user')
+    localStorage.removeItem('ra')
+    resetPlaylists()
     setUser(null)
     setLiked({})
     setRecentSearches([])
@@ -411,15 +364,15 @@ export default function App() {
     content = <LikedPage onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} navigate={navigate} />
   } else if (route.startsWith('/my-playlist/')) {
     const id = route.split('/')[2]
-    content = <UserPlaylistPage playlistId={id} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} navigate={navigate} />
+    content = <UserPlaylistPage playlistId={id} onPlayTrack={play} onSetQueue={setQueue} onSetRepeat={setRepeat} activeItem={activeItem} isPlaying={isPlaying} navigate={navigate} />
   } else if (route === '/account') {
     content = <AccountPage user={user} navigate={navigate} onLogout={handleLogout} />
   } else {
     content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
   }
 
-  if (!user && (landed || showAuth)) return <Auth onAuth={handleAuth} onBack={() => { sessionStorage.removeItem('rx_auth'); sessionStorage.removeItem('rx_landed'); setLanded(false); setShowAuth(false); }} />
-  if (!landed) return <Landing onEnter={handleEnter} onSignIn={() => { sessionStorage.setItem('rx_auth', '1'); setShowAuth(true); setLanded(true); }} />
+  if (!user && (landed || showAuth)) return <Auth onAuth={handleAuth} onBack={() => { setLanded(false); setShowAuth(false) }} />
+  if (!landed) return <Landing onEnter={handleEnter} onSignIn={() => { setShowAuth(true); setLanded(true) }} />
 
   return (
     <div className="layout">
@@ -731,5 +684,13 @@ export default function App() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <PlaylistProvider>
+      <AppInner />
+    </PlaylistProvider>
   )
 }

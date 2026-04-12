@@ -1,37 +1,28 @@
 import { useState, useEffect } from 'react'
-import { apiFetch } from './api'
+import { usePlaylists } from './PlaylistContext'
 
 export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlaying, onLogout, navigate, currentRoute }) {
-  const [userPlaylists, setUserPlaylists] = useState([])
+  const { playlists, loaded, fetchPlaylists, createPlaylist, deletePlaylist } = usePlaylists()
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [creating, setCreating] = useState(false)
   const [showCreateInput, setShowCreateInput] = useState(false)
 
-  useEffect(() => { fetchUserPlaylists() }, [])
+  useEffect(() => { if (!loaded) fetchPlaylists() }, [loaded])
 
-  const fetchUserPlaylists = async () => {
-    try {
-      const res = await apiFetch('/api/user-playlists')
-      const data = await res.json()
-      if (res.ok) setUserPlaylists(data.playlists || [])
-    } catch {}
-  }
-
-  const createPlaylist = async () => {
+  const handleCreate = async () => {
     if (!newPlaylistName.trim()) return
     setCreating(true)
     try {
-      const res = await apiFetch('/api/user-playlists', { method: 'POST', body: JSON.stringify({ name: newPlaylistName.trim() }) })
-      const data = await res.json()
-      if (res.ok) { setUserPlaylists(prev => [data.playlist, ...prev]); setNewPlaylistName(''); setShowCreateInput(false) }
+      await createPlaylist(newPlaylistName.trim())
+      setNewPlaylistName('')
+      setShowCreateInput(false)
     } catch {}
     setCreating(false)
   }
 
-  const deletePlaylist = async (e, id) => {
+  const handleDelete = async (e, id) => {
     e.stopPropagation()
-    await apiFetch(`/api/user-playlists/${id}`, { method: 'DELETE' })
-    setUserPlaylists(prev => prev.filter(p => p.id !== id))
+    await deletePlaylist(id)
     if (currentRoute === `/my-playlist/${id}`) navigate('/')
   }
 
@@ -56,7 +47,6 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
   return (
     <div style={S.sidebar}>
 
-      {/* User card */}
       <div style={S.userCard}>
         <div style={S.avatar}>{user?.name?.[0]?.toUpperCase()}</div>
         <div style={{ overflow: 'hidden' }}>
@@ -81,7 +71,6 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
 
       <div style={S.divider} />
 
-      {/* My Playlists header */}
       <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px 4px' }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase', flex: 1 }}>My Playlists</span>
         <button style={{ ...S.iconBtn, color: '#555' }} title="New playlist"
@@ -99,25 +88,25 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
             placeholder="Playlist name..."
             value={newPlaylistName}
             onChange={e => setNewPlaylistName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') createPlaylist(); if (e.key === 'Escape') { setShowCreateInput(false); setNewPlaylistName('') } }}
+            onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setShowCreateInput(false); setNewPlaylistName('') } }}
           />
-          <button onClick={createPlaylist} disabled={creating || !newPlaylistName.trim()}
+          <button onClick={handleCreate} disabled={creating || !newPlaylistName.trim()}
             style={{ background: '#f2ca50', border: 'none', borderRadius: 6, padding: '7px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#0a0a0a', flexShrink: 0 }}>
             {creating ? '...' : 'Add'}
           </button>
         </div>
       )}
 
-      {userPlaylists.length === 0 && !showCreateInput && (
+      {playlists.length === 0 && !showCreateInput && (
         <div style={{ padding: '8px 20px', fontSize: 12, color: '#3a3a3a' }}>No playlists yet. Click + to create.</div>
       )}
 
-      {userPlaylists.map(p => (
+      {playlists.map(p => (
         <div key={p.id} style={S.playlistRow(isActive(`/my-playlist/${p.id}`))} onClick={() => navigate(`/my-playlist/${p.id}`)}>
           <span className="material-symbols-outlined" style={{ fontSize: 16, color: isActive(`/my-playlist/${p.id}`) ? '#f2ca50' : '#555', flexShrink: 0 }}>queue_music</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: isActive(`/my-playlist/${p.id}`) ? '#f2ca50' : '#a1a1aa', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
           <span style={{ fontSize: 11, color: '#3a3a3a', flexShrink: 0 }}>{p.song_count}</span>
-          <button style={S.iconBtn} onClick={e => deletePlaylist(e, p.id)}
+          <button style={S.iconBtn} onClick={e => handleDelete(e, p.id)}
             onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
             onMouseLeave={e => e.currentTarget.style.color = '#555'}>
             <span className="material-symbols-outlined" style={{ fontSize: 15 }}>delete</span>

@@ -1,6 +1,6 @@
 const API = import.meta.env.VITE_API_URL || '';
 
-const getToken = () => sessionStorage.getItem('rx_token');
+const getToken = () => localStorage.getItem('rx_token');
 
 export const apiFetch = (path, options = {}) => {
   const token = getToken();
