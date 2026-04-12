@@ -8,16 +8,16 @@ const streamController = async (req, res) => {
   if (!ytPattern.test(url)) return res.status(400).json({ error: 'Invalid YouTube URL' });
 
   const ytdlp = spawn('yt-dlp', [
-    '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+    '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
     '--no-playlist',
     '--no-warnings',
     '-o', '-',
     url,
   ]);
 
-  res.setHeader('Content-Type', 'audio/mp4');
+  res.setHeader('Content-Type', 'audio/webm');
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('Access-Control-Allow-Origin', process.env.CLIENT_ORIGIN || 'http://localhost:5173');
 
   ytdlp.stdout.pipe(res);
 
@@ -30,6 +30,7 @@ const streamController = async (req, res) => {
 
   ytdlp.on('close', code => {
     if (code !== 0) console.error(`[YT-DLP] exited with code ${code}`);
+    if (!res.writableEnded) res.end();
   });
 
   req.on('close', () => ytdlp.kill('SIGTERM'));

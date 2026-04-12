@@ -320,7 +320,8 @@ function AppInner() {
         const url = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}`
         const res = await fetch(url)
         if (!res.ok) throw new Error('Stream failed')
-        const blob = await res.blob()
+        const rawBlob = await res.blob()
+        const blob = new Blob([rawBlob], { type: 'audio/webm' })
         const blobUrl = URL.createObjectURL(blob)
         try {
           sessionStorage.setItem(cacheKey, blobUrl)
