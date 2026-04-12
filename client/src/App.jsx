@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
+import Landing from './Landing'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -13,6 +14,7 @@ const fmt = (s) => {
 }
 
 export default function App() {
+  const [landed, setLanded] = useState(false)
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/')
   const [activeItem, setActiveItem] = useState(() => JSON.parse(sessionStorage.getItem('ra') || 'null'))
   const [isPlaying, setIsPlaying] = useState(false)
@@ -328,6 +330,8 @@ export default function App() {
 
   const cycleRepeat = () => setRepeat(r => r === 'off' ? 'all' : r === 'all' ? 'one' : 'off')
 
+  const handleEnter = () => setLanded(true)
+
   const navigate = (path) => {
     if (path === '/') {
       setSearchQuery('')
@@ -348,6 +352,8 @@ export default function App() {
   } else {
     content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
   }
+
+  if (!landed) return <Landing onEnter={handleEnter} />
 
   return (
     <div className="layout">
