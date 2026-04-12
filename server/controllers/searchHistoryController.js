@@ -3,14 +3,12 @@ const { sql } = require('../db');
 const saveSearchHistory = async (req, res) => {
   try {
     const { query } = req.body;
-    if (!query || !query.trim()) {
-      return res.status(400).json({ error: 'Query is required' });
-    }
+    if (!query?.trim()) return res.status(400).json({ error: 'Query is required' });
+    const userId = req.user.id;
 
-    await sql`
-      INSERT INTO search_history (query, searched_at)
-      VALUES (${query.trim()}, NOW())
-    `;
+    // Upsert: delete old entry for same query+user, insert fresh
+    await sql`DELETE FROM search_history WHERE user_id = ${userId} AND query = ${query.trim()}`;
+    await sql`INSERT INTO search_history (user_id, query, searched_at) VALUES (${userId}, ${query.trim()}, NOW())`;
 
     res.json({ success: true });
   } catch (err) {
@@ -21,13 +19,13 @@ const saveSearchHistory = async (req, res) => {
 
 const getSearchHistory = async (req, res) => {
   try {
+    const userId = req.user.id;
     const history = await sql`
-      SELECT DISTINCT ON (query) query, searched_at
-      FROM search_history
-      ORDER BY query, searched_at DESC
+      SELECT query FROM search_history
+      WHERE user_id = ${userId}
+      ORDER BY searched_at DESC
       LIMIT 10
     `;
-
     res.json({ history: history.map(h => h.query) });
   } catch (err) {
     console.error('[GET SEARCH HISTORY ERROR]', err.message);
@@ -37,13 +35,9 @@ const getSearchHistory = async (req, res) => {
 
 const deleteSearchHistory = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { query } = req.params;
-    
-    await sql`
-      DELETE FROM search_history
-      WHERE query = ${query}
-    `;
-
+    await sql`DELETE FROM search_history WHERE user_id = ${userId} AND query = ${query}`;
     res.json({ success: true });
   } catch (err) {
     console.error('[DELETE SEARCH HISTORY ERROR]', err.message);
@@ -53,7 +47,8 @@ const deleteSearchHistory = async (req, res) => {
 
 const clearAllSearchHistory = async (req, res) => {
   try {
-    await sql`DELETE FROM search_history`;
+    const userId = req.user.id;
+    await sql`DELETE FROM search_history WHERE user_id = ${userId}`;
     res.json({ success: true });
   } catch (err) {
     console.error('[CLEAR SEARCH HISTORY ERROR]', err.message);

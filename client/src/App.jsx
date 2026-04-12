@@ -4,6 +4,7 @@ import Search from './Search'
 import Playlist from './Playlist'
 import Landing from './Landing'
 import Auth from './Auth'
+import { apiFetch } from './api'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -17,12 +18,12 @@ const fmt = (s) => {
 export default function App() {
   const [landed, setLanded] = useState(() => sessionStorage.getItem('rx_landed') === '1')
   const [showAuth, setShowAuth] = useState(() => sessionStorage.getItem('rx_auth') === '1')
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('rx_user') || 'null'))
+  const [user, setUser] = useState(() => JSON.parse(sessionStorage.getItem('rx_user') || 'null'))
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/')
   const [activeItem, setActiveItem] = useState(() => JSON.parse(sessionStorage.getItem('ra') || 'null'))
   const [isPlaying, setIsPlaying] = useState(false)
   const [streamError, setStreamError] = useState('')
-  const [liked, setLiked] = useState(() => JSON.parse(sessionStorage.getItem('rl') || '{}'))
+  const [liked, setLiked] = useState({})
   const [progress, setProgress] = useState(0)
   const [currentTime, setCurrentTime] = useState('0:00')
   const [duration, setDuration] = useState('0:00')
@@ -53,11 +54,10 @@ export default function App() {
   }, [])
 
   useEffect(() => { sessionStorage.setItem('ra', JSON.stringify(activeItem)) }, [activeItem])
-  useEffect(() => { sessionStorage.setItem('rl', JSON.stringify(liked)) }, [liked])
 
   useEffect(() => {
-    fetchSearchHistory()
-  }, [])
+    if (user) { fetchSearchHistory(); fetchLiked(); }
+  }, [user])
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
@@ -71,9 +71,18 @@ export default function App() {
     }
   }, [searchQuery])
 
+  const fetchLiked = async () => {
+    try {
+      const res = await apiFetch('/api/liked')
+      const data = await res.json()
+      if (res.ok) setLiked(data.liked || {})
+    } catch {}
+  }
+
   const fetchSearchHistory = async () => {
     try {
-      const res = await fetch(`${API}/api/search-history`)
+      setRecentSearches([])
+      const res = await apiFetch('/api/search-history')
       const data = await res.json()
       if (res.ok) setRecentSearches(data.history || [])
     } catch (err) {
@@ -83,7 +92,7 @@ export default function App() {
 
   const fetchSuggestions = async (query) => {
     try {
-      const res = await fetch(`${API}/api/search-suggestions?q=${encodeURIComponent(query)}`)
+      const res = await apiFetch(`/api/search-suggestions?q=${encodeURIComponent(query)}`)
       const data = await res.json()
       if (res.ok && data.suggestions) {
         setSearchSuggestions(data.suggestions)
@@ -146,18 +155,15 @@ export default function App() {
   const handleSearch = async (q = searchQuery) => {
     q = q.trim()
     if (!q) return
-    
     try {
-      await fetch(`${API}/api/search-history`, {
+      await apiFetch('/api/search-history', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: q })
       })
       await fetchSearchHistory()
     } catch (err) {
       console.error('Failed to save search history:', err)
     }
-    
     setShowRecentSearches(false)
     setShowSuggestions(false)
     navigate(`/search?q=${encodeURIComponent(q)}`)
@@ -165,9 +171,7 @@ export default function App() {
 
   const removeRecentSearch = async (q) => {
     try {
-      await fetch(`${API}/api/search-history/${encodeURIComponent(q)}`, {
-        method: 'DELETE'
-      })
+      await apiFetch(`/api/search-history/${encodeURIComponent(q)}`, { method: 'DELETE' })
       await fetchSearchHistory()
     } catch (err) {
       console.error('Failed to delete search history:', err)
@@ -176,9 +180,7 @@ export default function App() {
 
   const clearAllRecentSearches = async () => {
     try {
-      await fetch(`${API}/api/search-history`, {
-        method: 'DELETE'
-      })
+      await apiFetch('/api/search-history', { method: 'DELETE' })
       await fetchSearchHistory()
     } catch (err) {
       console.error('Failed to clear search history:', err)
@@ -299,9 +301,16 @@ export default function App() {
     else { audio.pause(); setIsPlaying(false) }
   }
 
-  const toggleLike = (e, videoId) => {
+  const toggleLike = async (e, videoId, item) => {
     e.stopPropagation()
-    setLiked(prev => ({ ...prev, [videoId]: !prev[videoId] }))
+    const newVal = !liked[videoId]
+    setLiked(prev => ({ ...prev, [videoId]: newVal }))
+    try {
+      await apiFetch('/api/liked/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ videoId, title: item?.title || '', thumbnail: item?.thumbnail || '', channel: item?.channel || '' })
+      })
+    } catch {}
   }
 
   const playNext = () => {
@@ -335,14 +344,27 @@ export default function App() {
 
   const handleEnter = () => { sessionStorage.setItem('rx_landed', '1'); setLanded(true) }
 
-  const handleAuth = (u) => { setUser(u); sessionStorage.setItem('rx_landed', '1'); sessionStorage.removeItem('rx_auth'); setLanded(true) }
+  const handleAuth = (u) => {
+    setUser(u)
+    sessionStorage.setItem('rx_landed', '1')
+    sessionStorage.removeItem('rx_auth')
+    setLanded(true)
+    setRecentSearches([])
+    setLiked({})
+    setSearchQuery('')
+    setSearchSuggestions([])
+  }
 
   const handleLogout = () => {
-    localStorage.removeItem('rx_token')
+    sessionStorage.clear()
     localStorage.removeItem('rx_user')
-    sessionStorage.removeItem('rx_landed')
-    sessionStorage.removeItem('rx_auth')
     setUser(null)
+    setLiked({})
+    setRecentSearches([])
+    setSearchQuery('')
+    setSearchSuggestions([])
+    setActiveItem(null)
+    setIsPlaying(false)
     setLanded(false)
     setShowAuth(false)
   }
@@ -531,7 +553,7 @@ export default function App() {
           <span
             className="material-symbols-outlined bar-like"
             style={{ fontVariationSettings: liked[activeItem?.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem?.videoId] ? '#f2ca50' : '#3a3a3a' }}
-            onClick={e => activeItem && toggleLike(e, activeItem.videoId)}
+            onClick={e => activeItem && toggleLike(e, activeItem.videoId, activeItem)}
           >favorite</span>
           <button className="bar-expand" onClick={() => setShowCard(true)}>
             <span className="material-symbols-outlined">expand_less</span>
@@ -577,7 +599,7 @@ export default function App() {
                   <span
                     className="material-symbols-outlined np-like"
                     style={{ fontVariationSettings: liked[activeItem.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.35)' }}
-                    onClick={e => toggleLike(e, activeItem.videoId)}
+                    onClick={e => toggleLike(e, activeItem.videoId, activeItem)}
                   >favorite</span>
                 </div>
               </div>

@@ -161,7 +161,7 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
                       <span
                         className="material-symbols-outlined like-btn"
                         style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#fff' }}
-                        onClick={e => onToggleLike(e, item.videoId)}
+                        onClick={e => onToggleLike(e, item.videoId, item)}
                       >favorite</span>
                     </div>
                   </div>

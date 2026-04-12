@@ -10,6 +10,7 @@ const playlistRoute = require('./routes/playlist');
 const searchHistoryRoute = require('./routes/searchHistory');
 const searchSuggestionsRoute = require('./routes/searchSuggestions');
 const authRoute = require('./routes/auth');
+const likedRoute = require('./routes/liked');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -27,6 +28,7 @@ app.use('/api/playlists', playlistRoute);
 app.use('/api/search-history', searchHistoryRoute);
 app.use('/api/search-suggestions', searchSuggestionsRoute);
 app.use('/api/auth', authRoute);
+app.use('/api/liked', likedRoute);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 

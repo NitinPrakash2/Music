@@ -90,7 +90,7 @@ export default function Playlist({ type, onPlayTrack, activeItem, isPlaying, dow
             <span
               className="material-symbols-outlined playlist-track-like"
               style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#3a3a3a' }}
-              onClick={e => onToggleLike(e, item.videoId)}
+              onClick={e => onToggleLike(e, item.videoId, item)}
             >favorite</span>
           </div>
         ))}
