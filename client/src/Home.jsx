@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -8,12 +8,54 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   const [error, setError] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
+  const homeRef = useRef(null);
 
   useEffect(() => {
     fetchPlaylists();
-    const interval = setInterval(fetchPlaylists, 1800000); // Refresh every 30 minutes
+    const interval = setInterval(fetchPlaylists, 1800000);
     return () => clearInterval(interval);
   }, []);
+
+  // scroll blur on topbar
+  useEffect(() => {
+    const content = document.querySelector('.content');
+    if (!content) return;
+    const onScroll = () => {
+      const topbar = document.querySelector('.topbar');
+      if (topbar) topbar.classList.toggle('scrolled', content.scrollTop > 10);
+    };
+    content.addEventListener('scroll', onScroll);
+    return () => content.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // section reveal on scroll
+  useEffect(() => {
+    if (loading) return;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => entry.target.classList.add('visible'), i * 60);
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08 });
+    document.querySelectorAll('.playlist-section').forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  }, [loading]);
+
+  // card spotlight
+  useEffect(() => {
+    if (loading) return;
+    const onMove = (e) => {
+      const card = e.currentTarget;
+      const rect = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${((e.clientX - rect.left) / rect.width) * 100}%`);
+      card.style.setProperty('--my', `${((e.clientY - rect.top) / rect.height) * 100}%`);
+    };
+    const cards = document.querySelectorAll('.track-card');
+    cards.forEach(c => c.addEventListener('mousemove', onMove));
+    return () => cards.forEach(c => c.removeEventListener('mousemove', onMove));
+  }, [loading, playlists]);
 
   const fetchPlaylists = async () => {
     try {
@@ -61,7 +103,7 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   }
 
   return (
-    <div className="home">
+    <div className="home" ref={homeRef}>
       <div className="home-hero">
         <h1>Welcome to Relaxify</h1>
         <p>Discover trending music and your favorite playlists</p>
@@ -99,9 +141,10 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
               <a href={`#/playlist/${key}`} className="view-all">View All →</a>
             </div>
             <div className="playlist-grid">
-              {playlists[key].map(item => (
+              {playlists[key].map((item, idx) => (
                 <div
                   key={item.videoId}
+                  style={{ animationDelay: `${idx * 50}ms` }}
                   className={`track-card${activeItem?.videoId === item.videoId ? ' active' : ''}${activeItem?.videoId === item.videoId && downloading ? ' loading' : ''}`}
                 >
                   <div className="track-thumb" onClick={() => onPlayTrack(item)}>
