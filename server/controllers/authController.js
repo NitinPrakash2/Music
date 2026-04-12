@@ -57,4 +57,29 @@ const me = async (req, res) => {
   }
 };
 
-module.exports = { signup, login, me };
+const updateAccount = async (req, res) => {
+  const { name, currentPassword, newPassword } = req.body;
+  if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
+  try {
+    const [user] = await sql`SELECT * FROM users WHERE id = ${req.user.id}`;
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) return res.status(401).json({ error: 'Current password is incorrect' });
+    const updatedName = name?.trim() || user.name;
+    const updatedPassword = newPassword ? await bcrypt.hash(newPassword, 10) : user.password;
+    const [updated] = await sql`UPDATE users SET name = ${updatedName}, password = ${updatedPassword} WHERE id = ${req.user.id} RETURNING id, name, email`;
+    res.json({ user: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const deleteAccount = async (req, res) => {
+  try {
+    await sql`DELETE FROM users WHERE id = ${req.user.id}`;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { signup, login, me, updateAccount, deleteAccount };

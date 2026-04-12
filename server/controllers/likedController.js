@@ -11,6 +11,15 @@ const getLiked = async (req, res) => {
   }
 };
 
+const getLikedSongs = async (req, res) => {
+  try {
+    const songs = await sql`SELECT video_id, title, thumbnail, channel FROM liked_songs WHERE user_id = ${req.user.id} ORDER BY liked_at DESC`;
+    res.json({ songs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 const toggleLike = async (req, res) => {
   const { videoId, title, thumbnail, channel } = req.body;
   if (!videoId) return res.status(400).json({ error: 'videoId required' });
@@ -28,4 +37,4 @@ const toggleLike = async (req, res) => {
   }
 };
 
-module.exports = { getLiked, toggleLike };
+module.exports = { getLiked, getLikedSongs, toggleLike };

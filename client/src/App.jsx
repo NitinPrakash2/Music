@@ -1,12 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
+import React from 'react'
 import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
+import LikedPage from './LikedPage'
+import UserPlaylistPage from './UserPlaylistPage'
+import AccountPage from './AccountPage'
 import Landing from './Landing'
 import Auth from './Auth'
+import Sidebar from './Sidebar'
 import { apiFetch } from './api'
 
 const API = import.meta.env.VITE_API_URL || ''
+export const PlaylistContext = React.createContext(null)
 
 const fmt = (s) => {
   if (!s || isNaN(s)) return '0:00'
@@ -19,6 +25,7 @@ export default function App() {
   const [landed, setLanded] = useState(() => sessionStorage.getItem('rx_landed') === '1')
   const [showAuth, setShowAuth] = useState(() => sessionStorage.getItem('rx_auth') === '1')
   const [user, setUser] = useState(() => JSON.parse(sessionStorage.getItem('rx_user') || 'null'))
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/')
   const [activeItem, setActiveItem] = useState(() => JSON.parse(sessionStorage.getItem('ra') || 'null'))
   const [isPlaying, setIsPlaying] = useState(false)
@@ -56,8 +63,17 @@ export default function App() {
   useEffect(() => { sessionStorage.setItem('ra', JSON.stringify(activeItem)) }, [activeItem])
 
   useEffect(() => {
-    if (user) { fetchSearchHistory(); fetchLiked(); }
-  }, [user])
+    if (user) {
+      // Verify token is still valid on every app load
+      apiFetch('/api/auth/me').then(r => {
+        if (!r.ok) handleLogout()
+        else {
+          fetchSearchHistory()
+          fetchLiked()
+        }
+      }).catch(() => handleLogout())
+    }
+  }, [])
 
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
@@ -345,6 +361,7 @@ export default function App() {
   const handleEnter = () => { sessionStorage.setItem('rx_landed', '1'); setLanded(true) }
 
   const handleAuth = (u) => {
+    Object.keys(localStorage).filter(k => k.startsWith('blob_')).forEach(k => localStorage.removeItem(k))
     setUser(u)
     sessionStorage.setItem('rx_landed', '1')
     sessionStorage.removeItem('rx_auth')
@@ -353,11 +370,15 @@ export default function App() {
     setLiked({})
     setSearchQuery('')
     setSearchSuggestions([])
+    setActiveItem(null)
+    // fetch this user's data fresh from DB
+    setTimeout(() => { fetchLiked(); fetchSearchHistory() }, 100)
   }
 
   const handleLogout = () => {
     sessionStorage.clear()
-    localStorage.removeItem('rx_user')
+    // clear only blob cache keys from localStorage, keep nothing else
+    Object.keys(localStorage).filter(k => k.startsWith('blob_')).forEach(k => localStorage.removeItem(k))
     setUser(null)
     setLiked({})
     setRecentSearches([])
@@ -386,6 +407,13 @@ export default function App() {
   } else if (route.startsWith('/playlist/')) {
     const type = route.split('/')[2]
     content = <Playlist type={type} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+  } else if (route === '/liked') {
+    content = <LikedPage onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} navigate={navigate} />
+  } else if (route.startsWith('/my-playlist/')) {
+    const id = route.split('/')[2]
+    content = <UserPlaylistPage playlistId={id} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} navigate={navigate} />
+  } else if (route === '/account') {
+    content = <AccountPage user={user} navigate={navigate} onLogout={handleLogout} />
   } else {
     content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
   }
@@ -395,11 +423,57 @@ export default function App() {
 
   return (
     <div className="layout">
-      <div className="main">
-        <div className="topbar">
-          <div className="topbar-left" onClick={() => navigate('/')}>
-            <img src="/logo.png" alt="" className="topbar-logo-icon" />
-            <span className="topbar-logo-text">Relax<span>ify</span></span>
+      <style>{`
+        .sidebar-wrap {
+          width: 240px; flex-shrink: 0;
+          transform: translateX(0);
+          transition: width 0.35s cubic-bezier(0.16,1,0.3,1), transform 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.3s ease;
+          opacity: 1; overflow: hidden;
+        }
+        .sidebar-wrap.closed {
+          width: 0; transform: translateX(-20px); opacity: 0;
+        }
+        .hamburger-btn {
+          width: 38px; height: 38px; border-radius: 10px;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+          cursor: pointer; transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); flex-shrink: 0;
+        }
+        .hamburger-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); transform: scale(1.08); }
+        .hamburger-line {
+          width: 16px; height: 2px; background: #a1a1aa; border-radius: 2px;
+          transition: all 0.3s cubic-bezier(0.16,1,0.3,1); transform-origin: center;
+        }
+        .hamburger-btn.open .hamburger-line:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+        .hamburger-btn.open .hamburger-line:nth-child(2) { opacity: 0; transform: scaleX(0); }
+        .hamburger-btn.open .hamburger-line:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+        .track-card:hover .track-more-btn { opacity: 1 !important; }
+      `}</style>
+      <div className="main" style={{ flexDirection: 'row' }}>
+        <div className={`sidebar-wrap${sidebarOpen ? '' : ' closed'}`}>
+          <Sidebar
+            user={user}
+            liked={liked}
+            onPlayTrack={play}
+            activeItem={activeItem}
+            isPlaying={isPlaying}
+            onLogout={handleLogout}
+            navigate={navigate}
+            currentRoute={route}
+          />
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+          <div className="topbar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <button className={`hamburger-btn${sidebarOpen ? ' open' : ''}`} onClick={() => setSidebarOpen(v => !v)}>
+              <span className="hamburger-line" />
+              <span className="hamburger-line" />
+              <span className="hamburger-line" />
+            </button>
+            <div className="topbar-left" onClick={() => navigate('/')}>
+              <img src="/logo.png" alt="" className="topbar-logo-icon" />
+              <span className="topbar-logo-text">Relax<span>ify</span></span>
+            </div>
           </div>
           <div className="topbar-center">
             <div className="topbar-search-wrapper">
@@ -495,6 +569,7 @@ export default function App() {
 
         <div className="content">
           {content}
+        </div>
         </div>
       </div>
 

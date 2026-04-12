@@ -1,0 +1,12 @@
+const { Router } = require('express');
+const auth = require('../middleware/auth');
+const { getPlaylists, createPlaylist, deletePlaylist, getPlaylistSongs, addSong, removeSong } = require('../controllers/userPlaylistController');
+const router = Router();
+router.use(auth);
+router.get('/', getPlaylists);
+router.post('/', createPlaylist);
+router.delete('/:id', deletePlaylist);
+router.get('/:id/songs', getPlaylistSongs);
+router.post('/:id/songs', addSong);
+router.delete('/:id/songs/:videoId', removeSong);
+module.exports = router;
