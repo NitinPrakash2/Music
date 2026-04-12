@@ -649,14 +649,20 @@ function AppInner() {
           const rep = repeatRef.current
           const q = queueRef.current
           const cur = activeItemRef.current
-          // Clear cache of finished song
+          if (rep === 'one') {
+            // replay same song — keep cache, just seek to start
+            audioRef.current.currentTime = 0
+            audioRef.current.play()
+            return
+          }
+          // Clear cache of finished song before moving to next
           const prevKey = localStorage.getItem('rx_playing_key')
           if (prevKey) { localStorage.removeItem(prevKey); localStorage.removeItem('rx_playing_key') }
-          if (rep === 'one') { audioRef.current.currentTime = 0; audioRef.current.play() }
-          else if (rep === 'all' || shuffleRef.current) playNext()
-          else {
+          if (rep === 'all' || shuffleRef.current) {
+            playNext()
+          } else {
             const idx = q.findIndex(r => r.videoId === cur?.videoId)
-            if (idx < q.length - 1) playNext()
+            if (idx !== -1 && idx < q.length - 1) playNext()
             else setIsPlaying(false)
           }
         }}
