@@ -288,64 +288,49 @@ function AppInner() {
     setBuffering(true)
     setIsPlaying(false)
 
-    // Clear any previously cached song (keep storage clean)
-    const prevKey = localStorage.getItem('rx_playing_key')
-    if (prevKey && prevKey !== `rx_blob_${item.videoId}`) {
-      localStorage.removeItem(prevKey)
+    // Revoke previous blob URL to free memory
+    const prevUrl = localStorage.getItem('rx_playing_key')
+    if (prevUrl && prevUrl !== `rx_blob_${item.videoId}`) {
+      if (prevUrl.startsWith('blob:')) URL.revokeObjectURL(prevUrl)
       localStorage.removeItem('rx_playing_key')
     }
 
     const cacheKey = `rx_blob_${item.videoId}`
-    const cached = localStorage.getItem(cacheKey)
+    const cachedUrl = sessionStorage.getItem(cacheKey)
 
-    if (cached) {
-      // Use cached blob — seeking works perfectly
-      audio.src = cached
+    const startPlayback = async (src) => {
+      audio.src = src
       audio.load()
       try {
         await audio.play()
         setIsPlaying(true)
       } catch (e) {
-        setStreamError(e.message)
+        setStreamError('Tap play to start')
         setIsPlaying(false)
       } finally {
         setDownloading(false)
         setBuffering(false)
       }
+    }
+
+    if (cachedUrl) {
+      await startPlayback(cachedUrl)
     } else {
-      // Fetch full audio blob so seeking works
       try {
         const url = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}`
         const res = await fetch(url)
         if (!res.ok) throw new Error('Stream failed')
         const blob = await res.blob()
-        const reader = new FileReader()
-        reader.onloadend = async () => {
-          const base64 = reader.result
-          try {
-            localStorage.setItem(cacheKey, base64)
-            localStorage.setItem('rx_playing_key', cacheKey)
-          } catch {
-            // Storage full — clear old blobs and retry
-            Object.keys(localStorage)
-              .filter(k => k.startsWith('rx_blob_'))
-              .forEach(k => localStorage.removeItem(k))
-            try { localStorage.setItem(cacheKey, base64); localStorage.setItem('rx_playing_key', cacheKey) } catch {}
-          }
-          audio.src = base64
-          audio.load()
-          try {
-            await audio.play()
-            setIsPlaying(true)
-          } catch (e) {
-            setStreamError(e.message)
-            setIsPlaying(false)
-          } finally {
-            setDownloading(false)
-            setBuffering(false)
-          }
+        const blobUrl = URL.createObjectURL(blob)
+        try {
+          sessionStorage.setItem(cacheKey, blobUrl)
+          localStorage.setItem('rx_playing_key', blobUrl)
+        } catch {
+          // storage full — clear and retry
+          sessionStorage.clear()
+          try { sessionStorage.setItem(cacheKey, blobUrl) } catch {}
         }
-        reader.readAsDataURL(blob)
+        await startPlayback(blobUrl)
       } catch (e) {
         setStreamError(e.message)
         setIsPlaying(false)
@@ -436,11 +421,10 @@ function AppInner() {
   }
 
   const handleLogout = () => {
-    // Clear cached audio
-    const prevKey = localStorage.getItem('rx_playing_key')
-    if (prevKey) localStorage.removeItem(prevKey)
+    const prevUrl = localStorage.getItem('rx_playing_key')
+    if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl)
     localStorage.removeItem('rx_playing_key')
-    Object.keys(localStorage).filter(k => k.startsWith('rx_blob_')).forEach(k => localStorage.removeItem(k))
+    sessionStorage.clear()
     localStorage.removeItem('rx_token')
     localStorage.removeItem('rx_user')
     localStorage.removeItem('ra')
@@ -650,14 +634,18 @@ function AppInner() {
           const q = queueRef.current
           const cur = activeItemRef.current
           if (rep === 'one') {
-            // replay same song — keep cache, just seek to start
             audioRef.current.currentTime = 0
             audioRef.current.play()
             return
           }
-          // Clear cache of finished song before moving to next
-          const prevKey = localStorage.getItem('rx_playing_key')
-          if (prevKey) { localStorage.removeItem(prevKey); localStorage.removeItem('rx_playing_key') }
+          // Revoke blob URL of finished song
+          const prevUrl = localStorage.getItem('rx_playing_key')
+          if (prevUrl) {
+            if (prevUrl.startsWith('blob:')) URL.revokeObjectURL(prevUrl)
+            localStorage.removeItem('rx_playing_key')
+            const cacheKey = `rx_blob_${cur?.videoId}`
+            sessionStorage.removeItem(cacheKey)
+          }
           if (rep === 'all' || shuffleRef.current) {
             playNext()
           } else {
