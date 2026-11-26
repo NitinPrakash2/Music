@@ -22,7 +22,7 @@ export function PlaylistProvider({ children }) {
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error)
-    setPlaylists(prev => [data.playlist, ...prev])
+    setPlaylists(prev => [{ ...data.playlist, song_count: 0, video_ids: [] }, ...prev])
     return data.playlist
   }
 
@@ -32,22 +32,36 @@ export function PlaylistProvider({ children }) {
   }
 
   const addSong = async (playlistId, song) => {
+    const existing = playlists.find(p => p.id === playlistId)
+    if (existing?.video_ids?.includes(song.videoId)) {
+      return { ok: true, alreadyExists: true }
+    }
     const res = await apiFetch(`/api/user-playlists/${playlistId}/songs`, {
       method: 'POST',
       body: JSON.stringify(song),
     })
-    if (res.ok) {
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && !data.alreadyExists) {
       setPlaylists(prev =>
-        prev.map(p => p.id === playlistId ? { ...p, song_count: (p.song_count || 0) + 1 } : p)
+        prev.map(p => {
+          if (p.id !== playlistId) return p
+          const ids = p.video_ids || []
+          if (ids.includes(song.videoId)) return p
+          return { ...p, song_count: (p.song_count || 0) + 1, video_ids: [...ids, song.videoId] }
+        })
       )
     }
-    return res
+    return { ok: res.ok, alreadyExists: Boolean(data.alreadyExists) }
   }
 
   const removeSong = async (playlistId, videoId) => {
     await apiFetch(`/api/user-playlists/${playlistId}/songs/${videoId}`, { method: 'DELETE' })
     setPlaylists(prev =>
-      prev.map(p => p.id === playlistId ? { ...p, song_count: Math.max(0, (p.song_count || 1) - 1) } : p)
+      prev.map(p => {
+        if (p.id !== playlistId) return p
+        const ids = (p.video_ids || []).filter(id => id !== videoId)
+        return { ...p, song_count: Math.max(0, (p.song_count || 1) - 1), video_ids: ids }
+      })
     )
   }
 

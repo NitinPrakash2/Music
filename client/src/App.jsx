@@ -103,6 +103,7 @@ function AppInner() {
   const shuffleRef = useRef(false)
   const pendingResumeTimeRef = useRef(0)
   const lastSavedTimeRef = useRef(0)
+  const playedHistoryRef = useRef(new Set())
 
   const savePlaybackState = (item, time, dur, q) => {
     if (!item?.videoId) return
@@ -391,6 +392,7 @@ function AppInner() {
   })
 
   const play = async (item) => {
+    if (item?.videoId) playedHistoryRef.current.add(item.videoId)
     pendingResumeTimeRef.current = 0
     setStreamError('')
     setActiveItem(item)
@@ -476,6 +478,26 @@ function AppInner() {
         body: JSON.stringify({ videoId, title: item?.title || '', thumbnail: item?.thumbnail || '', channel: item?.channel || '' })
       })
     } catch {}
+  }
+
+  const playRelatedAutoplay = async (cur) => {
+    if (!cur?.videoId) { setIsPlaying(false); return }
+    try {
+      const cleanChannel = (cur.channel || '').replace(/\s*-\s*Topic$/i, '').replace(/\b(Official|VEVO)\b/gi, '').trim()
+      const isLabel = /^(t-series|zee music|saregama|sony music|speed records|tips official|yrf|eros now)/i.test(cleanChannel)
+      const titleHint = (cur.title || '').split(/[|\-(]/)[0].trim()
+      const qStr = isLabel || !cleanChannel ? `${titleHint} ${cleanChannel} songs`.trim() : `${cleanChannel} hit songs`
+      const res = await fetch(`${API}/api/search?q=${encodeURIComponent(qStr)}`)
+      const data = await res.json()
+      const list = (data.results || []).filter(r => r.videoId && r.videoId !== cur.videoId)
+      const fresh = list.filter(r => !playedHistoryRef.current.has(r.videoId))
+      const pool = fresh.length ? fresh : list
+      if (!pool.length) { setIsPlaying(false); return }
+      const pick = pool[Math.floor(Math.random() * pool.length)]
+      play(pick)
+    } catch {
+      setIsPlaying(false)
+    }
   }
 
   const playNext = () => {
@@ -836,7 +858,7 @@ function AppInner() {
           } else {
             const idx = q.findIndex(r => r.videoId === cur?.videoId)
             if (idx !== -1 && idx < q.length - 1) playNext()
-            else setIsPlaying(false)
+            else playRelatedAutoplay(cur)
           }
         }}
       />

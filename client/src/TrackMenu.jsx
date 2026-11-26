@@ -51,7 +51,8 @@ export default function TrackMenu({ item, onClose, onToggleLike, liked, anchorRe
 
   const handleAdd = async (e, playlistId) => {
     e.stopPropagation()
-    if (added[playlistId]) return
+    const pl = playlists.find(p => p.id === playlistId)
+    if (added[playlistId] || pl?.video_ids?.includes(item.videoId)) return
     try {
       await addSong(playlistId, { videoId: item.videoId, title: item.title, thumbnail: item.thumbnail, channel: item.channel })
       setAdded(prev => ({ ...prev, [playlistId]: true }))
@@ -161,7 +162,7 @@ export default function TrackMenu({ item, onClose, onToggleLike, liked, anchorRe
                     <div style={{ fontSize: 12, color: '#3a3a3a', marginTop: 4 }}>Create one from the sidebar first</div>
                   </div>
                 ) : playlists.map(p => {
-                  const done = added[p.id]
+                  const done = Boolean(added[p.id] || p.video_ids?.includes(item.videoId))
                   return (
                     <div key={p.id} className="rx-row" onClick={e => handleAdd(e, p.id)} style={{ cursor: done ? 'default' : 'pointer' }}>
                       <div style={{ width: 44, height: 44, borderRadius: 10, flexShrink: 0, background: done ? 'rgba(74,222,128,0.12)' : 'linear-gradient(135deg,#1e1e2e,#16213e)', border: `1px solid ${done ? 'rgba(74,222,128,0.2)' : 'rgba(255,255,255,0.06)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
@@ -269,7 +270,7 @@ export default function TrackMenu({ item, onClose, onToggleLike, liked, anchorRe
                     ) : playlists.length === 0 ? (
                       <div style={{ padding: '14px', fontSize: 12, color: '#71717a', textAlign: 'center' }}>No playlists yet</div>
                     ) : playlists.map(p => {
-                      const done = added[p.id]
+                      const done = Boolean(added[p.id] || p.video_ids?.includes(item.videoId))
                       return (
                         <div key={p.id} className="rx-dprow" onClick={e => handleAdd(e, p.id)} style={{ cursor: done ? 'default' : 'pointer' }}>
                           <div style={{ width: 28, height: 28, borderRadius: 6, flexShrink: 0, background: done ? 'rgba(74,222,128,0.12)' : 'rgba(242,202,80,0.08)', border: `1px solid ${done ? 'rgba(74,222,128,0.24)' : 'rgba(242,202,80,0.14)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -301,7 +302,7 @@ export default function TrackMenu({ item, onClose, onToggleLike, liked, anchorRe
               ) : playlists.length === 0 ? (
                 <div style={{ padding: '14px', fontSize: 12, color: '#555', textAlign: 'center' }}>No playlists yet</div>
               ) : playlists.map(p => {
-                const done = added[p.id]
+                const done = Boolean(added[p.id] || p.video_ids?.includes(item.videoId))
                 return (
                   <div key={p.id} className="rx-dprow" onClick={e => handleAdd(e, p.id)} style={{ cursor: done ? 'default' : 'pointer' }}>
                     <div style={{ width: 28, height: 28, borderRadius: 6, flexShrink: 0, background: done ? 'rgba(74,222,128,0.1)' : 'rgba(242,202,80,0.08)', border: `1px solid ${done ? 'rgba(74,222,128,0.2)' : 'rgba(242,202,80,0.12)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

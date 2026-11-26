@@ -5,7 +5,8 @@ const getPlaylists = async (req, res) => {
   try {
     const playlists = await sql`
       SELECT p.id, p.name, p.created_at,
-        COUNT(s.id)::int AS song_count
+        COUNT(s.id)::int AS song_count,
+        COALESCE(ARRAY_AGG(s.video_id) FILTER (WHERE s.video_id IS NOT NULL), '{}') AS video_ids
       FROM user_playlists p
       LEFT JOIN user_playlist_songs s ON s.playlist_id = p.id
       WHERE p.user_id = ${req.user.id}
@@ -54,8 +55,8 @@ const addSong = async (req, res) => {
     // verify ownership
     const [p] = await sql`SELECT id FROM user_playlists WHERE id = ${req.params.id} AND user_id = ${req.user.id}`;
     if (!p) return res.status(403).json({ error: 'Not your playlist' });
-    await sql`INSERT INTO user_playlist_songs (playlist_id, video_id, title, thumbnail, channel) VALUES (${req.params.id}, ${videoId}, ${title||''}, ${thumbnail||''}, ${channel||''}) ON CONFLICT DO NOTHING`;
-    res.json({ success: true });
+    const inserted = await sql`INSERT INTO user_playlist_songs (playlist_id, video_id, title, thumbnail, channel) VALUES (${req.params.id}, ${videoId}, ${title||''}, ${thumbnail||''}, ${channel||''}) ON CONFLICT DO NOTHING RETURNING id`;
+    res.json({ success: true, alreadyExists: inserted.length === 0 });
   } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
