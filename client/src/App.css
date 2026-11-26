@@ -1310,9 +1310,33 @@ button { cursor: pointer; border: none; background: none; }
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.32, 0.72, 0, 1);
 }
-.topbar-account-wrap:hover .topbar-account-pill {
+.topbar-account-wrap.open .topbar-account-pill {
   background: rgba(242,202,80,0.08);
   border-color: rgba(242,202,80,0.3);
+}
+.topbar-account-wrap.open .topbar-account-chevron {
+  transform: rotate(180deg);
+  color: #f2ca50;
+}
+.topbar-account-wrap.open .topbar-account-menu {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+@media (hover: hover) and (pointer: fine) {
+  .topbar-account-wrap:hover .topbar-account-pill {
+    background: rgba(242,202,80,0.08);
+    border-color: rgba(242,202,80,0.3);
+  }
+  .topbar-account-wrap:hover .topbar-account-chevron {
+    transform: rotate(180deg);
+    color: #f2ca50;
+  }
+  .topbar-account-wrap:hover .topbar-account-menu {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: all;
+  }
 }
 .topbar-account-avatar {
   width: 28px;
@@ -1344,10 +1368,6 @@ button { cursor: pointer; border: none; background: none; }
   color: #71717a;
   transition: transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), color 0.2s;
 }
-.topbar-account-wrap:hover .topbar-account-chevron {
-  transform: rotate(180deg);
-  color: #f2ca50;
-}
 .topbar-account-menu {
   position: absolute;
   top: 100%;
@@ -1359,11 +1379,6 @@ button { cursor: pointer; border: none; background: none; }
   transform-origin: top right;
   pointer-events: none;
   transition: opacity 0.22s cubic-bezier(0.32, 0.72, 0, 1), transform 0.26s cubic-bezier(0.32, 0.72, 0, 1);
-}
-.topbar-account-wrap:hover .topbar-account-menu {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: all;
 }
 .topbar-account-card {
   width: 250px;

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Home, Heart, Plus, ListMusic, Trash2, UserCog, LogOut } from 'lucide-react'
+import { X, Home, Heart, Plus, ListMusic, Trash2 } from 'lucide-react'
 import { usePlaylists } from './PlaylistContext'
 
 export default function MobileDrawer({ open, onClose, user, liked, navigate, onLogout, currentRoute }) {
@@ -74,19 +74,8 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
           </button>
         </div>
 
-        {/* User card */}
-        <div style={{ margin: '12px 16px', borderRadius: 12, padding: '12px 14px', background: 'rgba(242,202,80,0.05)', border: '1px solid rgba(242,202,80,0.1)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg,#f2ca50,#e8920a)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: '#0a0a0a', flexShrink: 0 }}>
-            {user?.name?.[0]?.toUpperCase()}
-          </div>
-          <div style={{ overflow: 'hidden' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.name}</div>
-            <div style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email}</div>
-          </div>
-        </div>
-
         {/* Nav */}
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '8px 20px 4px' }}>Menu</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '12px 20px 4px' }}>Menu</div>
 
         <div style={navItem(isActive('/'))} onClick={() => go('/')}>
           <Home size={19} style={{ color: isActive('/') ? '#f2ca50' : '#555' }} />
@@ -151,24 +140,7 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
           )
         })}
 
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 16px' }} />
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '8px 20px 4px' }}>Account</div>
-
-        <div style={navItem(isActive('/account'))} onClick={() => go('/account')}>
-          <UserCog size={19} style={{ color: isActive('/account') ? '#f2ca50' : '#555' }} />
-          Manage Account
-        </div>
-
         <div style={{ flex: 1 }} />
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 16px' }} />
-
-        <button onClick={() => { onLogout(); onClose() }}
-          style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#f87171', background: 'transparent', border: 'none', width: '100%', fontFamily: 'inherit', transition: 'background 0.15s' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(248,113,113,0.08)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-          <LogOut size={19} />
-          Sign Out
-        </button>
         <div style={{ height: 20 }} />
       </div>
     </>

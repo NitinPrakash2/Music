@@ -3,8 +3,9 @@ import {
   Search as SearchIcon, X, History, LogOut, UserCog,
   SkipBack, SkipForward, Play, Pause, Loader2,
   Heart, ChevronUp, ChevronDown, VolumeX, Volume1, Volume2,
-  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw
+  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw, ListPlus
 } from 'lucide-react'
+import TrackMenu from './TrackMenu'
 import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
@@ -58,8 +59,26 @@ function AppInner() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [npMenuOpen, setNpMenuOpen] = useState(false)
   const [heroAmbientThumb, setHeroAmbientThumb] = useState('')
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  const accountWrapRef = useRef(null)
+  const npMenuBtnRef = useRef(null)
+
+  useEffect(() => {
+    const onOutside = (e) => {
+      if (accountWrapRef.current && !accountWrapRef.current.contains(e.target)) {
+        setAccountMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onOutside)
+    document.addEventListener('touchstart', onOutside)
+    return () => {
+      document.removeEventListener('mousedown', onOutside)
+      document.removeEventListener('touchstart', onOutside)
+    }
+  }, [])
 
   useEffect(() => {
     const goOnline = () => setIsOnline(true)
@@ -724,9 +743,12 @@ function AppInner() {
                 )}
               </div>
 
-              {/* Account pill with hover dropdown */}
-              <div className="topbar-account-wrap">
-                <div className="topbar-account-pill">
+              {/* Account pill with hover (desktop) + tap/click (mobile & desktop) dropdown */}
+              <div ref={accountWrapRef} className={`topbar-account-wrap${accountMenuOpen ? ' open' : ''}`}>
+                <div
+                  className="topbar-account-pill"
+                  onClick={() => setAccountMenuOpen(v => !v)}
+                >
                   <div className="topbar-account-avatar">{user?.name?.[0]?.toUpperCase()}</div>
                   <span className="topbar-user-name">Hi, {user?.name?.split(' ')[0]}</span>
                   <ChevronDown size={14} className="topbar-account-chevron" />
@@ -742,11 +764,11 @@ function AppInner() {
                       </div>
                     </div>
                     <div className="topbar-account-divider" />
-                    <button type="button" className="topbar-account-item" onClick={() => navigate('/account')}>
+                    <button type="button" className="topbar-account-item" onClick={() => { setAccountMenuOpen(false); navigate('/account') }}>
                       <UserCog size={16} />
                       <span>Manage Account</span>
                     </button>
-                    <button type="button" className="topbar-account-item danger" onClick={handleLogout}>
+                    <button type="button" className="topbar-account-item danger" onClick={() => { setAccountMenuOpen(false); handleLogout() }}>
                       <LogOut size={16} />
                       <span>Sign Out</span>
                     </button>
@@ -906,6 +928,24 @@ function AppInner() {
                   >
                     <Heart size={20} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
                   </button>
+                  <button
+                    ref={npMenuBtnRef}
+                    type="button"
+                    title="Add to Playlist / Download"
+                    style={{ background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', cursor: 'pointer', color: npMenuOpen ? '#f2ca50' : 'rgba(255,255,255,0.45)', transition: 'color 0.15s' }}
+                    onClick={e => { e.stopPropagation(); setNpMenuOpen(v => !v) }}
+                  >
+                    <ListPlus size={20} />
+                  </button>
+                  {npMenuOpen && (
+                    <TrackMenu
+                      item={activeItem}
+                      anchorRef={npMenuBtnRef}
+                      onClose={() => setNpMenuOpen(false)}
+                      liked={liked}
+                      onToggleLike={toggleLike}
+                    />
+                  )}
                 </div>
               </div>
 
