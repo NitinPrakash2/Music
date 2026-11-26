@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Relaxify</string>
+    <string name="title_activity_main">Relaxify</string>
+    <string name="package_name">com.relaxify.app</string>
+    <string name="custom_url_scheme">com.relaxify.app</string>
+</resources>

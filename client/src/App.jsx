@@ -6,6 +6,7 @@ import {
   Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw, ListPlus
 } from 'lucide-react'
 import TrackMenu from './TrackMenu'
+import { resolveStreamUrl, triggerTrackDownload } from './nativeAudio'
 import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
@@ -158,11 +159,16 @@ function AppInner() {
         setProgress((t / d) * 100)
       }
       pendingResumeTimeRef.current = t
-      setTimeout(() => {
+      setTimeout(async () => {
         const audio = audioRef.current
         if (!audio || audio.src) return
-        audio.src = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${saved.item.videoId}`)}`
-        audio.preload = 'metadata'
+        try {
+          const url = await resolveStreamUrl(saved.item.videoId, API)
+          if (audio && !audio.src) {
+            audio.src = url
+            audio.preload = 'metadata'
+          }
+        } catch {}
       }, 0)
     } catch {}
   }, [user?.id])
@@ -428,8 +434,15 @@ function AppInner() {
     if (cachedUrl) {
       await startPlayback(cachedUrl)
     } else {
-      const url = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}`
-      await startPlayback(url)
+      try {
+        const url = await resolveStreamUrl(item.videoId, API)
+        await startPlayback(url)
+      } catch (e) {
+        setStreamError(e.message || 'Failed to load audio')
+        setIsPlaying(false)
+        setDownloading(false)
+        setBuffering(false)
+      }
     }
 
     // Media Session API
@@ -862,16 +875,16 @@ function AppInner() {
 
         <div className="bar-right">
           {activeItem && (
-            <a
-              href={`${API}/api/stream/download?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${activeItem.videoId}`)}&title=${encodeURIComponent(activeItem.title || 'relaxify-track')}`}
-              download={`${activeItem.title || 'relaxify-track'}.mp3`}
-              title="Download MP3"
-              style={{ display: 'flex', alignItems: 'center', padding: 4, color: '#a1a1aa', transition: 'color 0.15s' }}
+            <button
+              type="button"
+              onClick={() => triggerTrackDownload(activeItem, API)}
+              title="Download Audio"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4, color: '#a1a1aa', transition: 'color 0.15s' }}
               onMouseEnter={e => e.currentTarget.style.color = '#f2ca50'}
               onMouseLeave={e => e.currentTarget.style.color = '#a1a1aa'}
             >
               <Download size={18} />
-            </a>
+            </button>
           )}
           <button
             type="button"

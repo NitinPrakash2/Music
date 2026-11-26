@@ -9,6 +9,7 @@ dist
 dist-ssr
 release
 *.exe
+*.apk
 electron/bin
 
 # OS

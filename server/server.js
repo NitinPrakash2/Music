@@ -26,6 +26,9 @@ app.use(cors({
     const allowed = [
       process.env.CLIENT_ORIGIN,
       'http://localhost:5173',
+      'https://localhost',
+      'http://localhost',
+      'capacitor://localhost',
     ].filter(Boolean)
     if (
       !origin ||

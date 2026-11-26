@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Heart, ListPlus, ChevronRight, ArrowLeft, Loader2, ListMusic, Check, CheckCircle2, Download } from 'lucide-react'
 import { usePlaylists } from './PlaylistContext'
+import { triggerTrackDownload } from './nativeAudio'
 
 const API = import.meta.env.VITE_API_URL || ''
 const isMobile = () => window.innerWidth <= 768
@@ -59,13 +60,7 @@ export default function TrackMenu({ item, onClose, onToggleLike, liked, anchorRe
 
   const handleDownload = (e) => {
     e.stopPropagation()
-    const url = `${API}/api/stream/download?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}&title=${encodeURIComponent(item.title || 'relaxify-track')}`
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${item.title || 'relaxify-track'}.mp3`
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+    triggerTrackDownload(item, API)
     onClose()
   }
 
