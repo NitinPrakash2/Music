@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Home, Heart, Plus, ListMusic, Trash2 } from 'lucide-react'
 import { usePlaylists } from './PlaylistContext'
 
 export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlaying, onLogout, navigate, currentRoute }) {
@@ -30,7 +31,8 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
   const likedCount = Object.values(liked).filter(Boolean).length
 
   const S = {
-    sidebar: { width: 240, flexShrink: 0, background: 'rgba(8,8,8,0.95)', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', paddingTop: 72, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', fontFamily: "'Plus Jakarta Sans','Inter',sans-serif" },
+    sidebar: { width: 240, height: '100%', flexShrink: 0, background: 'rgba(8,8,10,0.36)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderRight: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none', fontFamily: "'Plus Jakarta Sans','Inter',sans-serif" },
+    logoBar: { height: 72, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' },
     section: { padding: '12px 16px 4px', fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase' },
     navItem: (active) => ({ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderRadius: 10, margin: '1px 8px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: active ? '#f2ca50' : '#a1a1aa', background: active ? 'rgba(242,202,80,0.08)' : 'transparent', border: active ? '1px solid rgba(242,202,80,0.15)' : '1px solid transparent', transition: 'all 0.2s' }),
     navIcon: (active) => ({ fontSize: 18, color: active ? '#f2ca50' : '#555', flexShrink: 0 }),
@@ -46,25 +48,22 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
 
   return (
     <div style={S.sidebar}>
-
-      <div style={S.userCard}>
-        <div style={S.avatar}>{user?.name?.[0]?.toUpperCase()}</div>
-        <div style={{ overflow: 'hidden' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.name}</div>
-          <div style={{ fontSize: 11, color: '#555', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email}</div>
-        </div>
+      <div style={S.logoBar} onClick={() => navigate('/')}>
+        <img src="/logo.svg" alt="Relaxify" style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0 }} />
+        <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>
+          Relax<span style={{ color: '#f2ca50' }}>ify</span>
+        </span>
       </div>
 
-      <div style={S.divider} />
       <div style={S.section}>Menu</div>
 
       <div style={S.navItem(isActive('/'))} onClick={() => navigate('/')}>
-        <span className="material-symbols-outlined" style={S.navIcon(isActive('/'))}>home</span>
+        <Home size={18} style={S.navIcon(isActive('/'))} />
         Home
       </div>
 
       <div style={S.navItem(isActive('/liked'))} onClick={() => navigate('/liked')}>
-        <span className="material-symbols-outlined" style={{ ...S.navIcon(isActive('/liked')), fontVariationSettings: isActive('/liked') ? "'FILL' 1" : "'FILL' 0" }}>favorite</span>
+        <Heart size={18} style={S.navIcon(isActive('/liked'))} fill={isActive('/liked') ? '#f2ca50' : 'none'} />
         Liked Songs
         {likedCount > 0 && <span style={S.badge}>{likedCount}</span>}
       </div>
@@ -77,7 +76,7 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
           onClick={() => setShowCreateInput(v => !v)}
           onMouseEnter={e => e.currentTarget.style.color = '#f2ca50'}
           onMouseLeave={e => e.currentTarget.style.color = '#555'}>
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>add</span>
+          <Plus size={18} />
         </button>
       </div>
 
@@ -103,34 +102,18 @@ export default function Sidebar({ user, liked, onPlayTrack, activeItem, isPlayin
 
       {playlists.map(p => (
         <div key={p.id} style={S.playlistRow(isActive(`/my-playlist/${p.id}`))} onClick={() => navigate(`/my-playlist/${p.id}`)}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16, color: isActive(`/my-playlist/${p.id}`) ? '#f2ca50' : '#555', flexShrink: 0 }}>queue_music</span>
+          <ListMusic size={16} style={{ color: isActive(`/my-playlist/${p.id}`) ? '#f2ca50' : '#555', flexShrink: 0 }} />
           <span style={{ fontSize: 13, fontWeight: 600, color: isActive(`/my-playlist/${p.id}`) ? '#f2ca50' : '#a1a1aa', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
           <span style={{ fontSize: 11, color: '#3a3a3a', flexShrink: 0 }}>{p.song_count}</span>
           <button style={S.iconBtn} onClick={e => handleDelete(e, p.id)}
             onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
             onMouseLeave={e => e.currentTarget.style.color = '#555'}>
-            <span className="material-symbols-outlined" style={{ fontSize: 15 }}>delete</span>
+            <Trash2 size={15} />
           </button>
         </div>
       ))}
 
-      <div style={S.divider} />
-      <div style={S.section}>Account</div>
-
-      <div style={S.navItem(isActive('/account'))} onClick={() => navigate('/account')}>
-        <span className="material-symbols-outlined" style={S.navIcon(isActive('/account'))}>manage_accounts</span>
-        Manage Account
-      </div>
-
       <div style={{ flex: 1 }} />
-      <div style={S.divider} />
-
-      <button style={S.logoutBtn} onClick={onLogout}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.08)'; e.currentTarget.style.borderColor = 'rgba(248,113,113,0.2)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent' }}>
-        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>logout</span>
-        Sign Out
-      </button>
       <div style={{ height: 16 }} />
     </div>
   )

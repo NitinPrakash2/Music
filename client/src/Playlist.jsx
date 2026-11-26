@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Loader2, AlertCircle, ArrowLeft, Play, Pause, Heart } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -38,7 +39,7 @@ export default function Playlist({ type, onPlayTrack, activeItem, isPlaying, dow
   if (loading) {
     return (
       <div className="playlist-loading">
-        <span className="material-symbols-outlined spin">autorenew</span>
+        <Loader2 size={30} className="spin" />
         <p>Loading playlist...</p>
       </div>
     );
@@ -47,7 +48,7 @@ export default function Playlist({ type, onPlayTrack, activeItem, isPlaying, dow
   if (error) {
     return (
       <div className="playlist-error">
-        <span className="material-symbols-outlined">error</span>
+        <AlertCircle size={30} />
         <p>{error}</p>
         <button onClick={fetchPlaylist}>Retry</button>
       </div>
@@ -58,7 +59,7 @@ export default function Playlist({ type, onPlayTrack, activeItem, isPlaying, dow
     <div className="playlist-page">
       <div className="playlist-page-header">
         <a href="#/" className="back-btn">
-          <span className="material-symbols-outlined">arrow_back</span>
+          <ArrowLeft size={20} />
         </a>
         <h1>{titles[type] || 'Playlist'}</h1>
         <p>{songs.length} songs</p>
@@ -76,10 +77,10 @@ export default function Playlist({ type, onPlayTrack, activeItem, isPlaying, dow
               <img src={item.thumbnail} alt={item.title} />
               <div className="playlist-track-overlay">
                 {activeItem?.videoId === item.videoId && downloading
-                  ? <span className="material-symbols-outlined spin">autorenew</span>
-                  : <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      {activeItem?.videoId === item.videoId && isPlaying ? 'pause' : 'play_arrow'}
-                    </span>
+                  ? <Loader2 size={18} className="spin" />
+                  : activeItem?.videoId === item.videoId && isPlaying
+                    ? <Pause size={18} fill="#fff" stroke="#fff" />
+                    : <Play size={18} fill="#fff" stroke="#fff" />
                 }
               </div>
             </div>
@@ -87,11 +88,14 @@ export default function Playlist({ type, onPlayTrack, activeItem, isPlaying, dow
               <p className="playlist-track-title">{item.title}</p>
               <p className="playlist-track-channel">{item.channel}</p>
             </div>
-            <span
-              className="material-symbols-outlined playlist-track-like"
-              style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#3a3a3a' }}
+            <button
+              type="button"
+              className="playlist-track-like"
+              style={{ background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', color: liked[item.videoId] ? '#f2ca50' : '#3a3a3a' }}
               onClick={e => onToggleLike(e, item.videoId, item)}
-            >favorite</span>
+            >
+              <Heart size={18} fill={liked[item.videoId] ? '#f2ca50' : 'none'} />
+            </button>
           </div>
         ))}
       </div>

@@ -1,4 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
+import {
+  Search as SearchIcon, X, History, LogOut, UserCog,
+  SkipBack, SkipForward, Play, Pause, Loader2,
+  Heart, ChevronUp, ChevronDown, VolumeX, Volume1, Volume2,
+  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw
+} from 'lucide-react'
 import Home from './Home'
 import Search from './Search'
 import Playlist from './Playlist'
@@ -52,6 +58,19 @@ function AppInner() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [heroAmbientThumb, setHeroAmbientThumb] = useState('')
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true)
+    const goOffline = () => setIsOnline(false)
+    window.addEventListener('online', goOnline)
+    window.addEventListener('offline', goOffline)
+    return () => {
+      window.removeEventListener('online', goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
+  }, [])
   const searchInputRef = useRef(null)
   const audioRef = useRef(null)
   const barSeekRef = useRef(null)
@@ -62,6 +81,20 @@ function AppInner() {
   const activeItemRef = useRef(null)
   const repeatRef = useRef('off')
   const shuffleRef = useRef(false)
+  const pendingResumeTimeRef = useRef(0)
+  const lastSavedTimeRef = useRef(0)
+
+  const savePlaybackState = (item, time, dur, q) => {
+    if (!item?.videoId) return
+    try {
+      localStorage.setItem('rx_playback_state', JSON.stringify({
+        item,
+        time: Number.isFinite(time) ? time : 0,
+        duration: Number.isFinite(dur) ? dur : 0,
+        queue: (q || []).slice(0, 50),
+      }))
+    } catch {}
+  }
 
   // Keep refs in sync with state so closures always read current values
   useEffect(() => { queueRef.current = queue }, [queue])
@@ -78,14 +111,53 @@ function AppInner() {
   useEffect(() => {
     if (user) {
       apiFetch('/api/auth/me').then(r => {
-        if (!r.ok) handleLogout()
-        else {
+        if (r.status === 401) handleLogout()
+        else if (r.ok) {
           fetchSearchHistory()
           fetchLiked()
           fetchPlaylists()
         }
-      }).catch(() => handleLogout())
+      }).catch(() => {})
     }
+  }, [])
+
+  // Restore last played song and timestamp on startup
+  useEffect(() => {
+    if (!user) return
+    try {
+      const raw = localStorage.getItem('rx_playback_state')
+      if (!raw) return
+      const saved = JSON.parse(raw)
+      if (!saved?.item?.videoId) return
+      setActiveItem(saved.item)
+      if (Array.isArray(saved.queue) && saved.queue.length) setQueue(saved.queue)
+      const t = saved.time || 0
+      const d = saved.duration || 0
+      setCurrentTime(fmt(t))
+      if (d > 0) {
+        setDuration(fmt(d))
+        setProgress((t / d) * 100)
+      }
+      pendingResumeTimeRef.current = t
+      setTimeout(() => {
+        const audio = audioRef.current
+        if (!audio || audio.src) return
+        audio.src = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${saved.item.videoId}`)}`
+        audio.preload = 'metadata'
+      }, 0)
+    } catch {}
+  }, [user?.id])
+
+  // Save current playback timestamp right before closing window
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      const audio = audioRef.current
+      if (activeItemRef.current && audio) {
+        savePlaybackState(activeItemRef.current, audio.currentTime, audio.duration, queueRef.current)
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
 
   useEffect(() => {
@@ -132,21 +204,38 @@ function AppInner() {
     }
   }
 
-  useEffect(() => {
+  const handleTimeUpdate = () => {
     const audio = audioRef.current
     if (!audio) return
-    const onTime = () => {
-      setCurrentTime(fmt(audio.currentTime))
-      setProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0)
+    setCurrentTime(fmt(audio.currentTime))
+    const dur = audio.duration
+    if (dur && isFinite(dur)) {
+      setDuration(fmt(dur))
+      setProgress((audio.currentTime / dur) * 100)
     }
-    const onMeta = () => setDuration(fmt(audio.duration))
-    audio.addEventListener('timeupdate', onTime)
-    audio.addEventListener('loadedmetadata', onMeta)
-    return () => {
-      audio.removeEventListener('timeupdate', onTime)
-      audio.removeEventListener('loadedmetadata', onMeta)
+    const now = Date.now()
+    if (now - lastSavedTimeRef.current >= 1000 && activeItemRef.current) {
+      lastSavedTimeRef.current = now
+      savePlaybackState(activeItemRef.current, audio.currentTime, dur, queueRef.current)
     }
-  }, [])
+  }
+
+  const handleLoadedMetadata = () => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (audio.duration && isFinite(audio.duration)) {
+      setDuration(fmt(audio.duration))
+    }
+    if (pendingResumeTimeRef.current > 0) {
+      const target = Math.min(pendingResumeTimeRef.current, audio.duration || pendingResumeTimeRef.current)
+      audio.currentTime = target
+      setCurrentTime(fmt(target))
+      if (audio.duration && isFinite(audio.duration)) {
+        setProgress((target / audio.duration) * 100)
+      }
+      pendingResumeTimeRef.current = 0
+    }
+  }
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume
@@ -277,11 +366,13 @@ function AppInner() {
   })
 
   const play = async (item) => {
+    pendingResumeTimeRef.current = 0
     setStreamError('')
     setActiveItem(item)
     setProgress(0)
     setCurrentTime('0:00')
     setDuration('0:00')
+    savePlaybackState(item, 0, 0, queueRef.current)
 
     const audio = audioRef.current
     setDownloading(true)
@@ -306,6 +397,7 @@ function AppInner() {
         await audio.play()
         setIsPlaying(true)
       } catch (e) {
+        if (e.name === 'AbortError') return
         setStreamError('Tap play to start')
         setIsPlaying(false)
       } finally {
@@ -317,28 +409,8 @@ function AppInner() {
     if (cachedUrl) {
       await startPlayback(cachedUrl)
     } else {
-      try {
-        const url = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}`
-        const res = await fetch(url)
-        if (!res.ok) throw new Error('Stream failed')
-        const rawBlob = await res.blob()
-        const blob = new Blob([rawBlob], { type: rawBlob.type || 'audio/mpeg' })
-        const blobUrl = URL.createObjectURL(blob)
-        try {
-          sessionStorage.setItem(cacheKey, blobUrl)
-          localStorage.setItem('rx_playing_key', blobUrl)
-        } catch {
-          // storage full — clear and retry
-          sessionStorage.clear()
-          try { sessionStorage.setItem(cacheKey, blobUrl) } catch {}
-        }
-        await startPlayback(blobUrl)
-      } catch (e) {
-        setStreamError(e.message)
-        setIsPlaying(false)
-        setDownloading(false)
-        setBuffering(false)
-      }
+      const url = `${API}/api/stream?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${item.videoId}`)}`
+      await startPlayback(url)
     }
 
     // Media Session API
@@ -429,6 +501,7 @@ function AppInner() {
     sessionStorage.clear()
     localStorage.removeItem('rx_token')
     localStorage.removeItem('rx_user')
+    localStorage.removeItem('rx_playback_state')
     localStorage.removeItem('ra')
     resetPlaylists()
     setUser(null)
@@ -451,7 +524,7 @@ function AppInner() {
 
   let content
   if (route === '/' || route === '') {
-    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} />
   } else if (route.startsWith('/search')) {
     const params = new URLSearchParams(route.split('?')[1])
     const q = params.get('q') || ''
@@ -467,7 +540,42 @@ function AppInner() {
   } else if (route === '/account') {
     content = <AccountPage user={user} navigate={navigate} onLogout={handleLogout} />
   } else {
-    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} />
+  }
+
+  if (!isOnline) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: '#08080a', color: '#fff',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: 24, textAlign: 'center', fontFamily: "'Plus Jakarta Sans','Inter',sans-serif"
+      }}>
+        <div style={{
+          width: 72, height: 72, borderRadius: 20, marginBottom: 20,
+          background: 'rgba(242,202,80,0.1)', border: '1px solid rgba(242,202,80,0.28)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f2ca50'
+        }}>
+          <WifiOff size={34} />
+        </div>
+        <h1 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>No Internet Connection</h1>
+        <p style={{ fontSize: 14, color: '#a1a1aa', maxWidth: 360, lineHeight: 1.6, marginBottom: 24 }}>
+          Relaxify requires an active internet connection to search, stream, and download songs.
+        </p>
+        <button
+          type="button"
+          onClick={() => { if (navigator.onLine) setIsOnline(true); else window.location.reload() }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '11px 24px', borderRadius: 100, border: 'none',
+            background: 'linear-gradient(135deg,#f2ca50,#d4a12a)', color: '#1a1000',
+            fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit'
+          }}
+        >
+          <RefreshCw size={15} />
+          Retry Connection
+        </button>
+      </div>
+    )
   }
 
   if (!user && (landed || showAuth)) return <Auth onAuth={handleAuth} onBack={() => { setLanded(false); setShowAuth(false) }} />
@@ -502,7 +610,13 @@ function AppInner() {
         .track-card:hover .track-more-btn { opacity: 1 !important; }
       `}</style>
       <div className="main">
-        <div className={`sidebar-wrap${sidebarOpen ? '' : ' closed'}`}>
+        {((isPlaying && activeItem?.thumbnail) || heroAmbientThumb) && (route === '/' || route === '') ? (
+          <div
+            className="app-ambient-backdrop"
+            style={{ backgroundImage: `url(${(isPlaying && activeItem?.thumbnail) ? activeItem.thumbnail : heroAmbientThumb})` }}
+          />
+        ) : null}
+        <div className={`sidebar-wrap${sidebarOpen ? '' : ' closed'}`} style={{ position: 'relative', zIndex: 2 }}>
           <Sidebar
             user={user}
             liked={liked}
@@ -516,7 +630,7 @@ function AppInner() {
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative', minWidth: 0 }}>
           <div className={`topbar${searchOpen ? ' search-open' : ''}`}>
-            {/* Left: hamburgers + logo — hidden when search is open on mobile */}
+            {/* Left: hamburgers + logo (logo shown when sidebar is closed or on mobile) */}
             <div className="topbar-left-group">
               <button className={`hamburger-btn${sidebarOpen ? ' open' : ''}`} onClick={() => setSidebarOpen(v => !v)}>
                 <span className="hamburger-line" />
@@ -528,86 +642,117 @@ function AppInner() {
                 <span className="hamburger-line" />
                 <span className="hamburger-line" />
               </button>
-              <div className="topbar-left" onClick={() => navigate('/')}>
-                <img src="/logo.png" alt="" className="topbar-logo-icon" />
+              <div className={`topbar-left${sidebarOpen ? ' desktop-hidden' : ''}`} onClick={() => navigate('/')}>
+                <img src="/logo.svg" alt="Relaxify" className="topbar-logo-icon" style={{ borderRadius: 8 }} />
                 <span className="topbar-logo-text">Relax<span>ify</span></span>
               </div>
             </div>
 
-            {/* Expandable search */}
-            <div className={`topbar-search-expand${searchOpen ? ' open' : ''}`}>
-              <div className={`topbar-search-container${searchFocused ? ' focused' : ''}`}>
-                <span className="material-symbols-outlined" style={{ flexShrink: 0 }}>search</span>
-                <input
-                  ref={searchInputRef}
-                  placeholder="Songs, artists, albums..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleSearch()
-                    if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); setSearchSuggestions([]) }
-                  }}
-                  onFocus={() => { setSearchFocused(true); if (!searchQuery.trim()) setShowRecentSearches(true) }}
-                  onBlur={() => setTimeout(() => {
-                    setSearchFocused(false); setShowRecentSearches(false); setShowSuggestions(false)
-                  }, 200)}
-                />
-                {searchQuery && (
-                  <button className="topbar-clear-btn" onClick={() => { setSearchQuery(''); setSearchSuggestions([]); searchInputRef.current?.focus() }}>
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
+            {/* Right: iOS fluid expandable search + Account hover menu */}
+            <div className="topbar-right">
+              <div className={`topbar-search-ios${searchOpen ? ' open' : ''}`}>
+                <button
+                  type="button"
+                  className="topbar-icon-btn topbar-search-trigger"
+                  title="Search"
+                  onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 80) }}
+                >
+                  <SearchIcon size={18} />
+                </button>
+
+                <div className={`topbar-search-pill${searchFocused ? ' focused' : ''}`}>
+                  <SearchIcon size={17} style={{ flexShrink: 0, color: searchFocused ? '#f2ca50' : '#888', transition: 'color 0.2s' }} />
+                  <input
+                    ref={searchInputRef}
+                    placeholder="Songs, artists, albums..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleSearch()
+                      if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); setSearchSuggestions([]) }
+                    }}
+                    onFocus={() => { setSearchFocused(true); if (!searchQuery.trim()) setShowRecentSearches(true) }}
+                    onBlur={() => setTimeout(() => {
+                      setSearchFocused(false); setShowRecentSearches(false); setShowSuggestions(false)
+                    }, 200)}
+                  />
+                  {searchQuery && (
+                    <button className="topbar-clear-btn" onClick={() => { setSearchQuery(''); setSearchSuggestions([]); searchInputRef.current?.focus() }}>
+                      <X size={15} />
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="topbar-search-close"
+                  onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchSuggestions([]); setShowRecentSearches(false); setShowSuggestions(false) }}
+                >
+                  Cancel
+                </button>
+
+                {/* Dropdowns */}
+                {searchOpen && showRecentSearches && recentSearches.length > 0 && !searchQuery.trim() && (
+                  <div className="topbar-recent-searches">
+                    <div className="topbar-recent-header">
+                      <span>Recent</span>
+                      <button onClick={clearAllRecentSearches}>Clear all</button>
+                    </div>
+                    {recentSearches.map((item, idx) => (
+                      <div key={idx} className="topbar-recent-item"
+                        onMouseDown={e => { e.preventDefault(); setSearchQuery(item); handleSearch(item) }}>
+                        <History size={16} style={{ color: '#777', flexShrink: 0 }} />
+                        <span className="topbar-recent-text">{item}</span>
+                        <button className="topbar-recent-remove"
+                          onMouseDown={e => { e.preventDefault(); e.stopPropagation(); removeRecentSearch(item) }}>
+                          <X size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {searchOpen && showSuggestions && searchSuggestions.length > 0 && searchQuery.trim() && (
+                  <div className="topbar-recent-searches">
+                    {searchSuggestions.map((item, idx) => (
+                      <div key={idx} className="topbar-recent-item"
+                        onMouseDown={e => { e.preventDefault(); setSearchQuery(item); handleSearch(item) }}>
+                        <SearchIcon size={16} style={{ color: '#777', flexShrink: 0 }} />
+                        <span className="topbar-recent-text">{item}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
-              {/* Close button — only shown when expanded */}
-              <button className="topbar-search-close" onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchSuggestions([]) }}>
-                Cancel
-              </button>
+              {/* Account pill with hover dropdown */}
+              <div className="topbar-account-wrap">
+                <div className="topbar-account-pill">
+                  <div className="topbar-account-avatar">{user?.name?.[0]?.toUpperCase()}</div>
+                  <span className="topbar-user-name">Hi, {user?.name?.split(' ')[0]}</span>
+                  <ChevronDown size={14} className="topbar-account-chevron" />
+                </div>
 
-              {/* Dropdowns */}
-              {showRecentSearches && recentSearches.length > 0 && !searchQuery.trim() && (
-                <div className="topbar-recent-searches">
-                  <div className="topbar-recent-header">
-                    <span>Recent</span>
-                    <button onClick={clearAllRecentSearches}>Clear all</button>
+                <div className="topbar-account-menu">
+                  <div className="topbar-account-card">
+                    <div className="topbar-account-info">
+                      <div className="topbar-account-avatar lg">{user?.name?.[0]?.toUpperCase()}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="topbar-account-fullname">{user?.name}</div>
+                        <div className="topbar-account-email">{user?.email}</div>
+                      </div>
+                    </div>
+                    <div className="topbar-account-divider" />
+                    <button type="button" className="topbar-account-item" onClick={() => navigate('/account')}>
+                      <UserCog size={16} />
+                      <span>Manage Account</span>
+                    </button>
+                    <button type="button" className="topbar-account-item danger" onClick={handleLogout}>
+                      <LogOut size={16} />
+                      <span>Sign Out</span>
+                    </button>
                   </div>
-                  {recentSearches.map((item, idx) => (
-                    <div key={idx} className="topbar-recent-item"
-                      onMouseDown={e => { e.preventDefault(); setSearchQuery(item); handleSearch(item) }}>
-                      <span className="material-symbols-outlined">history</span>
-                      <span className="topbar-recent-text">{item}</span>
-                      <button className="topbar-recent-remove"
-                        onMouseDown={e => { e.preventDefault(); e.stopPropagation(); removeRecentSearch(item) }}>
-                        <span className="material-symbols-outlined">close</span>
-                      </button>
-                    </div>
-                  ))}
                 </div>
-              )}
-              {showSuggestions && searchSuggestions.length > 0 && searchQuery.trim() && (
-                <div className="topbar-recent-searches">
-                  {searchSuggestions.map((item, idx) => (
-                    <div key={idx} className="topbar-recent-item"
-                      onMouseDown={e => { e.preventDefault(); setSearchQuery(item); handleSearch(item) }}>
-                      <span className="material-symbols-outlined">search</span>
-                      <span className="topbar-recent-text">{item}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Right: user + search icon + logout */}
-            <div className="topbar-right">
-              <span className="topbar-user-name">Hi, {user?.name?.split(' ')[0]}</span>
-              {/* Search icon — triggers expand */}
-              <button className="topbar-icon-btn topbar-search-trigger" title="Search"
-                onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 50) }}>
-                <span className="material-symbols-outlined">search</span>
-              </button>
-              <button className="topbar-icon-btn" title="Logout" onClick={handleLogout}>
-                <span className="material-symbols-outlined">logout</span>
-              </button>
+              </div>
             </div>
           </div>
 
@@ -619,6 +764,9 @@ function AppInner() {
 
       <audio
         ref={audioRef}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onDurationChange={handleLoadedMetadata}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onWaiting={() => setBuffering(true)}
@@ -679,23 +827,40 @@ function AppInner() {
         </div>
 
         <div className="bar-center">
-          <button className="bar-skip" onClick={playPrev}><span className="material-symbols-outlined">skip_previous</span></button>
+          <button className="bar-skip" onClick={playPrev}><SkipBack size={20} /></button>
           <button className="bar-play" onClick={togglePlay} disabled={downloading || buffering}>
-            <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1", animation: (downloading || buffering) ? 'spin 0.8s linear infinite' : 'none' }}>
-              {downloading || buffering ? 'autorenew' : isPlaying ? 'pause' : 'play_arrow'}
-            </span>
+            {downloading || buffering
+              ? <Loader2 size={20} className="spin" />
+              : isPlaying
+                ? <Pause size={20} fill="currentColor" />
+                : <Play size={20} fill="currentColor" style={{ marginLeft: 2 }} />}
           </button>
-          <button className="bar-skip" onClick={playNext}><span className="material-symbols-outlined">skip_next</span></button>
+          <button className="bar-skip" onClick={playNext}><SkipForward size={20} /></button>
         </div>
 
         <div className="bar-right">
-          <span
-            className="material-symbols-outlined bar-like"
-            style={{ fontVariationSettings: liked[activeItem?.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem?.videoId] ? '#f2ca50' : '#3a3a3a' }}
+          {activeItem && (
+            <a
+              href={`${API}/api/stream/download?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${activeItem.videoId}`)}&title=${encodeURIComponent(activeItem.title || 'relaxify-track')}`}
+              download={`${activeItem.title || 'relaxify-track'}.mp3`}
+              title="Download MP3"
+              style={{ display: 'flex', alignItems: 'center', padding: 4, color: '#a1a1aa', transition: 'color 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#f2ca50'}
+              onMouseLeave={e => e.currentTarget.style.color = '#a1a1aa'}
+            >
+              <Download size={18} />
+            </a>
+          )}
+          <button
+            type="button"
+            className="bar-like"
+            style={{ background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', color: liked[activeItem?.videoId] ? '#f2ca50' : '#3a3a3a' }}
             onClick={e => activeItem && toggleLike(e, activeItem.videoId, activeItem)}
-          >favorite</span>
+          >
+            <Heart size={19} fill={liked[activeItem?.videoId] ? '#f2ca50' : 'none'} />
+          </button>
           <button className="bar-expand" onClick={() => setShowCard(true)}>
-            <span className="material-symbols-outlined">expand_less</span>
+            <ChevronUp size={20} />
           </button>
         </div>
 
@@ -713,7 +878,7 @@ function AppInner() {
 
               <div className="np-header">
                 <button className="np-close" onClick={closeCard}>
-                  <span className="material-symbols-outlined">keyboard_arrow_down</span>
+                  <ChevronDown size={22} />
                 </button>
                 <span className="np-label">Now Playing</span>
                 <div className="np-header-right">
@@ -730,16 +895,17 @@ function AppInner() {
                       </div>
                     )}
                     <button className="np-vol-btn" onClick={() => setShowVol(v => !v)}>
-                      <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>
-                        {volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'}
-                      </span>
+                      {volume === 0 ? <VolumeX size={19} /> : volume < 0.5 ? <Volume1 size={19} /> : <Volume2 size={19} />}
                     </button>
                   </div>
-                  <span
-                    className="material-symbols-outlined np-like"
-                    style={{ fontVariationSettings: liked[activeItem.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.35)' }}
+                  <button
+                    type="button"
+                    className="np-like"
+                    style={{ background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.35)' }}
                     onClick={e => toggleLike(e, activeItem.videoId, activeItem)}
-                  >favorite</span>
+                  >
+                    <Heart size={20} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
+                  </button>
                 </div>
               </div>
 
@@ -771,21 +937,23 @@ function AppInner() {
 
               <div className="np-controls">
                 <button className={`np-btn-sm${shuffle ? ' np-btn-active' : ''}`} onClick={() => setShuffle(v => !v)}>
-                  <span className="material-symbols-outlined">shuffle</span>
+                  <Shuffle size={19} />
                 </button>
                 <button className="np-btn-md" onClick={playPrev}>
-                  <span className="material-symbols-outlined">skip_previous</span>
+                  <SkipBack size={22} />
                 </button>
                 <button className="np-btn-play" onClick={togglePlay} disabled={downloading || buffering}>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1", animation: (downloading || buffering) ? 'spin 0.8s linear infinite' : 'none' }}>
-                    {downloading || buffering ? 'autorenew' : isPlaying ? 'pause' : 'play_arrow'}
-                  </span>
+                  {downloading || buffering
+                    ? <Loader2 size={26} className="spin" />
+                    : isPlaying
+                      ? <Pause size={26} fill="currentColor" />
+                      : <Play size={26} fill="currentColor" style={{ marginLeft: 3 }} />}
                 </button>
                 <button className="np-btn-md" onClick={playNext}>
-                  <span className="material-symbols-outlined">skip_next</span>
+                  <SkipForward size={22} />
                 </button>
                 <button className={`np-btn-sm${repeat !== 'off' ? ' np-btn-active' : ''}`} onClick={cycleRepeat}>
-                  <span className="material-symbols-outlined">{repeat === 'one' ? 'repeat_one' : 'repeat'}</span>
+                  {repeat === 'one' ? <Repeat1 size={19} /> : <Repeat size={19} />}
                 </button>
               </div>
 

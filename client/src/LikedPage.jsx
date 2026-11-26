@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Loader2, ArrowLeft, Heart, AudioLines } from 'lucide-react'
 import { apiFetch } from './api'
 
 export default function LikedPage({ onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike, navigate }) {
@@ -29,7 +30,7 @@ export default function LikedPage({ onPlayTrack, activeItem, isPlaying, download
     empty: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '50vh', gap: 12, color: '#444' },
   }
 
-  if (loading) return <div style={P.empty}><span className="material-symbols-outlined spin" style={{ fontSize: 40, color: '#f2ca50' }}>autorenew</span></div>
+  if (loading) return <div style={P.empty}><Loader2 size={38} className="spin" style={{ color: '#f2ca50' }} /></div>
 
   return (
     <div style={P.page}>
@@ -37,10 +38,10 @@ export default function LikedPage({ onPlayTrack, activeItem, isPlaying, download
         <button style={P.backBtn} onClick={() => navigate('/')}
           onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#fff' }}
           onMouseLeave={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.color = '#888' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 22 }}>arrow_back</span>
+          <ArrowLeft size={20} />
         </button>
         <div style={P.icon}>
-          <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#0a0a0a', fontVariationSettings: "'FILL' 1" }}>favorite</span>
+          <Heart size={26} color="#0a0a0a" fill="#0a0a0a" />
         </div>
         <div>
           <h1 style={P.title}>Liked Songs</h1>
@@ -50,7 +51,7 @@ export default function LikedPage({ onPlayTrack, activeItem, isPlaying, download
 
       {songs.length === 0 ? (
         <div style={P.empty}>
-          <span className="material-symbols-outlined" style={{ fontSize: 56, color: '#1e1e1e' }}>favorite</span>
+          <Heart size={52} style={{ color: '#1e1e1e' }} />
           <p style={{ fontSize: 16, fontWeight: 600 }}>No liked songs yet</p>
           <p style={{ fontSize: 13, color: '#333' }}>Like songs to see them here</p>
         </div>
@@ -61,9 +62,9 @@ export default function LikedPage({ onPlayTrack, activeItem, isPlaying, download
               onClick={() => onPlayTrack({ videoId: song.video_id, title: song.title, thumbnail: song.thumbnail, channel: song.channel })}
               onMouseEnter={e => { if (activeItem?.videoId !== song.video_id) e.currentTarget.style.background = '#111' }}
               onMouseLeave={e => { if (activeItem?.videoId !== song.video_id) e.currentTarget.style.background = 'transparent' }}>
-              <span style={{ width: 24, textAlign: 'center', fontSize: 13, color: activeItem?.videoId === song.video_id ? '#f2ca50' : '#555', flexShrink: 0 }}>
+              <span style={{ width: 24, textAlign: 'center', fontSize: 13, color: activeItem?.videoId === song.video_id ? '#f2ca50' : '#555', flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
                 {activeItem?.videoId === song.video_id && isPlaying
-                  ? <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#f2ca50' }}>graphic_eq</span>
+                  ? <AudioLines size={16} style={{ color: '#f2ca50' }} />
                   : idx + 1}
               </span>
               <img src={song.thumbnail} alt="" style={P.thumb} />
@@ -71,11 +72,12 @@ export default function LikedPage({ onPlayTrack, activeItem, isPlaying, download
                 <div style={P.rowTitle}>{song.title}</div>
                 <div style={P.rowCh}>{song.channel}</div>
               </div>
-              <span className="material-symbols-outlined"
-                style={{ fontSize: 20, cursor: 'pointer', color: '#f2ca50', fontVariationSettings: "'FILL' 1", flexShrink: 0 }}
+              <button
+                type="button"
+                style={{ background: 'none', border: 'none', padding: 4, cursor: 'pointer', color: '#f2ca50', display: 'flex', alignItems: 'center', flexShrink: 0 }}
                 onClick={e => onToggleLike(e, song.video_id, { videoId: song.video_id, title: song.title, thumbnail: song.thumbnail, channel: song.channel })}>
-                favorite
-              </span>
+                <Heart size={18} fill="#f2ca50" />
+              </button>
             </div>
           ))}
         </div>

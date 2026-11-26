@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Loader2, Play, Pause, Heart, MoreVertical, Music } from 'lucide-react';
 import TrackMenu from './TrackMenu';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -17,12 +18,18 @@ function SearchCard({ item, activeItem, isPlaying, downloading, liked, onPlayTra
         <div className="track-overlay">
           <div className="play-icon">
             {isActive && downloading
-              ? <span className="material-symbols-outlined spin" style={{ color: '#1a1000', fontSize: 22 }}>autorenew</span>
-              : <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>{isActive && isPlaying ? 'pause' : 'play_arrow'}</span>}
+              ? <Loader2 size={20} className="spin" style={{ color: '#1a1000' }} />
+              : isActive && isPlaying
+                ? <Pause size={20} fill="#1a1000" stroke="#1a1000" />
+                : <Play size={20} fill="#1a1000" stroke="#1a1000" style={{ marginLeft: 2 }} />}
           </div>
-          <span className="material-symbols-outlined like-btn"
-            style={{ fontVariationSettings: liked[item.videoId] ? "'FILL' 1" : "'FILL' 0", color: liked[item.videoId] ? '#f2ca50' : '#fff' }}
-            onClick={e => onToggleLike(e, item.videoId, item)}>favorite</span>
+          <button
+            type="button"
+            className="like-btn"
+            style={{ background: 'none', border: 'none', padding: 0, display: 'flex', alignItems: 'center', color: liked[item.videoId] ? '#f2ca50' : '#fff' }}
+            onClick={e => onToggleLike(e, item.videoId, item)}>
+            <Heart size={18} fill={liked[item.videoId] ? '#f2ca50' : 'none'} />
+          </button>
         </div>
       </div>
       <div className="track-info">
@@ -34,7 +41,7 @@ function SearchCard({ item, activeItem, isPlaying, downloading, liked, onPlayTra
         onClick={e => { e.stopPropagation(); setMenuOpen(isOpen ? null : item.videoId) }}
         className="track-more-btn"
         style={{ position: 'absolute', top: 8, right: 8, width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', zIndex: 4, padding: 0 }}>
-        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>more_vert</span>
+        <MoreVertical size={16} />
       </button>
 
       {isOpen && (
@@ -71,7 +78,7 @@ export default function Search({ searchQuery, onPlayTrack, activeItem, isPlaying
     finally { setLoading(false); }
   };
 
-  if (loading) return <div className="search-loading"><span className="material-symbols-outlined spin">autorenew</span><p>Searching...</p></div>;
+  if (loading) return <div className="search-loading"><Loader2 size={28} className="spin" /><p>Searching...</p></div>;
 
   return (
     <div className="search-page">
@@ -102,7 +109,7 @@ export default function Search({ searchQuery, onPlayTrack, activeItem, isPlaying
       )}
       {results.length === 0 && !loading && !error && (
         <div className="empty">
-          <span className="material-symbols-outlined">music_note</span>
+          <Music size={40} style={{ color: '#f2ca50', marginBottom: 12 }} />
           <h2>Play what you love</h2>
           <p>Search for songs, artists, and more using the search bar above.</p>
         </div>

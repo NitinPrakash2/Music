@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <radialGradient id="rxBg" cx="30%" cy="25%" r="80%">
+      <stop offset="0%" stop-color="#2a210d"/>
+      <stop offset="60%" stop-color="#11100c"/>
+      <stop offset="100%" stop-color="#070707"/>
+    </radialGradient>
+    <linearGradient id="rxGold" x1="12" y1="12" x2="52" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="50%" stop-color="#f2ca50"/>
+      <stop offset="100%" stop-color="#b47b09"/>
+    </linearGradient>
+    <linearGradient id="rxRing" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f2ca50" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#f2ca50" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#rxBg)" stroke="url(#rxRing)" stroke-width="2"/>
+  <!-- Soundwave bars on the left -->
+  <rect x="15" y="27" width="4" height="10" rx="2" fill="url(#rxGold)" opacity="0.75"/>
+  <rect x="22" y="19" width="4.5" height="26" rx="2.25" fill="url(#rxGold)"/>
+  <!-- Play-wave centerpiece -->
+  <path d="M31 18.5C31 16.9 32.8 15.9 34.2 16.8L48.5 26.3C49.7 27.1 49.7 28.9 48.5 29.7L34.2 39.2C32.8 40.1 31 39.1 31 37.5V18.5Z" fill="url(#rxGold)"/>
+  <!-- Subtle R-tail / harmonic arc -->
+  <path d="M35.5 39.5L45.5 47.5" stroke="url(#rxGold)" stroke-width="4.2" stroke-linecap="round"/>
+</svg>

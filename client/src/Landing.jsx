@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Music, PlayCircle, Flame, Zap, ListMusic, AudioLines, MonitorSmartphone, Ban } from 'lucide-react';
 
 export default function Landing({ onEnter, onSignIn }) {
   useEffect(() => {
@@ -531,7 +532,7 @@ export default function Landing({ onEnter, onSignIn }) {
       {/* HEADER */}
       <header className="header">
         <div className="logo">
-          <img src="/logo.png" alt="" style={{ width: 32, height: 32, borderRadius: '50%' }} />
+          <img src="/logo.svg" alt="Relaxify" style={{ width: 32, height: 32, borderRadius: 9 }} />
           Relax<span>ify</span>
         </div>
         <nav className="nav-links">
@@ -544,7 +545,7 @@ export default function Landing({ onEnter, onSignIn }) {
       {/* HERO */}
       <section className="hero-section section-padding">
         <div className="badge">
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>music_note</span>
+          <Music size={16} />
           100% Free. No strings attached.
         </div>
         <h1 className="hero-title">
@@ -556,7 +557,7 @@ export default function Landing({ onEnter, onSignIn }) {
         </p>
         <div className="cta-group">
           <button className="cta-btn" onClick={onEnter}>
-            <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>play_circle</span>
+            <PlayCircle size={20} />
             Start Listening Now
           </button>
           <a className="secondary-btn" href="#features">See How It Works</a>
@@ -588,19 +589,19 @@ export default function Landing({ onEnter, onSignIn }) {
         
         <div className="features-grid">
           {[
-            { icon: 'local_fire_department', title: 'Trending Real-Time', desc: 'Stay ahead of the curve with constantly updating charts and viral hits from around the globe.' },
-            { icon: 'bolt', title: 'Lightning Search', desc: 'Find any track, album, or artist instantly with our highly optimized search engine.' },
-            { icon: 'queue_music', title: 'Smart Playlists', desc: 'Discover perfectly curated playlists and continuous mixes for whatever mood you are in.' },
-            { icon: 'graphic_eq', title: 'Clean Audio Interface', desc: 'A beautiful, dark-mode focused player designed to get out of the way of your listening.' },
-            { icon: 'devices', title: 'Works Everywhere', desc: 'No installations required. Access your music directly from any modern web browser.' },
-            { icon: 'block', title: 'Zero Ads Forever', desc: 'Enjoy a pure listening experience. No audio ads between songs, no annoying popups.' },
-          ].map((feature, idx) => (
+            { Icon: Flame, title: 'Trending Real-Time', desc: 'Stay ahead of the curve with constantly updating charts and viral hits from around the globe.' },
+            { Icon: Zap, title: 'Lightning Search', desc: 'Find any track, album, or artist instantly with our highly optimized search engine.' },
+            { Icon: ListMusic, title: 'Smart Playlists', desc: 'Discover perfectly curated playlists and continuous mixes for whatever mood you are in.' },
+            { Icon: AudioLines, title: 'Clean Audio Interface', desc: 'A beautiful, dark-mode focused player designed to get out of the way of your listening.' },
+            { Icon: MonitorSmartphone, title: 'Works Everywhere', desc: 'No installations required. Access your music directly from any modern web browser.' },
+            { Icon: Ban, title: 'Zero Ads Forever', desc: 'Enjoy a pure listening experience. No audio ads between songs, no annoying popups.' },
+          ].map(({ Icon, title, desc }, idx) => (
             <div className="feature-card reveal" key={idx} data-delay={idx * 80}>
               <div className="feature-icon-wrapper">
-                <span className="material-symbols-outlined" style={{ fontSize: 32 }}>{feature.icon}</span>
+                <Icon size={28} />
               </div>
-              <h3 className="feature-title">{feature.title}</h3>
-              <p className="feature-desc">{feature.desc}</p>
+              <h3 className="feature-title">{title}</h3>
+              <p className="feature-desc">{desc}</p>
             </div>
           ))}
         </div>
@@ -641,7 +642,7 @@ export default function Landing({ onEnter, onSignIn }) {
         <div className="footer-grid">
           <div className="footer-brand">
             <div className="logo" style={{ fontSize: '1.25rem' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 24 }}>graphic_eq</span>
+              <img src="/logo.svg" alt="Relaxify" style={{ width: 26, height: 26, borderRadius: 7 }} />
               Relax<span>ify</span>
             </div>
             <p>A pure, ad-free music streaming interface. Built for true music lovers who demand a better experience without the paywalls.</p>

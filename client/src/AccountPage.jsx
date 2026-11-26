@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Eye, EyeOff, ArrowLeft, UserCog, AlertCircle, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { apiFetch } from './api'
 
 function EyeBtn({ show, onToggle }) {
@@ -10,9 +11,7 @@ function EyeBtn({ show, onToggle }) {
     }}
       onMouseEnter={e => e.currentTarget.style.color = '#f2ca50'}
       onMouseLeave={e => e.currentTarget.style.color = '#555'}>
-      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-        {show ? 'visibility_off' : 'visibility'}
-      </span>
+      {show ? <EyeOff size={18} /> : <Eye size={18} />}
     </button>
   )
 }
@@ -102,7 +101,7 @@ export default function AccountPage({ user, navigate, onLogout }) {
         <button style={P.backBtn} onClick={() => navigate('/')}
           onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#fff' }}
           onMouseLeave={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.color = '#888' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 22 }}>arrow_back</span>
+          <ArrowLeft size={20} />
         </button>
         <div style={P.avatar}>{user?.name?.[0]?.toUpperCase()}</div>
         <div>
@@ -114,13 +113,13 @@ export default function AccountPage({ user, navigate, onLogout }) {
       {/* Update Profile */}
       <div style={P.card}>
         <div style={P.cardTitle}>
-          <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#f2ca50' }}>manage_accounts</span>
+          <UserCog size={20} style={{ color: '#f2ca50' }} />
           Update Profile
         </div>
 
         {msg.text && (
           <div style={P.msg(msg.error)}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{msg.error ? 'error' : 'check_circle'}</span>
+            {msg.error ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
             {msg.text}
           </div>
         )}
@@ -199,7 +198,7 @@ export default function AccountPage({ user, navigate, onLogout }) {
       {/* Delete Account */}
       <div style={P.dangerCard}>
         <div style={P.dangerTitle}>
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>warning</span>
+          <AlertTriangle size={20} />
           Delete Account
         </div>
         <p style={P.dangerDesc}>
@@ -208,7 +207,7 @@ export default function AccountPage({ user, navigate, onLogout }) {
 
         {deleteMsg.text && (
           <div style={P.msg(deleteMsg.error)}>
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>{deleteMsg.error ? 'error' : 'check_circle'}</span>
+            {deleteMsg.error ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
             {deleteMsg.text}
           </div>
         )}

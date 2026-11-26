@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ArrowLeft, User, Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -364,14 +365,14 @@ export default function Auth({ onAuth, onBack }) {
 
       <div className="auth-wrapper">
         <button onClick={onBack} className="back-btn" title="Back">
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_back</span>
+          <ArrowLeft size={20} />
         </button>
 
         <div className="auth-card">
 
           <div className="auth-header">
             <div className="auth-logo">
-              <img src="/logo.png" alt="Relaxify" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
+              <img src="/logo.svg" alt="Relaxify" style={{ width: 42, height: 42, borderRadius: 12 }} />
             </div>
             <h1 className="auth-title">
               Relax<span style={{ color: '#f2ca50' }}>ify</span>
@@ -415,7 +416,7 @@ export default function Auth({ onAuth, onBack }) {
                     required
                     onChange={e => set('name', e.target.value)}
                   />
-                  <span className="material-symbols-outlined input-icon">person</span>
+                  <User size={18} className="input-icon" />
                 </div>
               </div>
             )}
@@ -431,7 +432,7 @@ export default function Auth({ onAuth, onBack }) {
                   required
                   onChange={e => set('email', e.target.value)}
                 />
-                <span className="material-symbols-outlined input-icon">mail</span>
+                <Mail size={18} className="input-icon" />
               </div>
             </div>
 
@@ -447,18 +448,16 @@ export default function Auth({ onAuth, onBack }) {
                   onChange={e => set('password', e.target.value)}
                   style={{ paddingRight: 48 }}
                 />
-                <span className="material-symbols-outlined input-icon">lock</span>
+                <Lock size={18} className="input-icon" />
                 <button type="button" className="eye-btn" onClick={() => setShowPass(v => !v)} tabIndex={-1}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
-                    {showPass ? 'visibility_off' : 'visibility'}
-                  </span>
+                  {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </div>
 
             {error && (
               <div className="error-msg">
-                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>error</span>
+                <AlertCircle size={18} />
                 {error}
               </div>
             )}
@@ -466,13 +465,13 @@ export default function Auth({ onAuth, onBack }) {
             <button type="submit" className="submit-btn" disabled={loading}>
               {loading ? (
                 <>
-                  <span className="material-symbols-outlined loading-spinner">autorenew</span>
+                  <Loader2 size={18} className="loading-spinner" />
                   {isLogin ? 'Authenticating...' : 'Setting up...'}
                 </>
               ) : (
                 <>
                   {isLogin ? 'Sign In to Relaxify' : 'Create Account'}
-                  <span className="material-symbols-outlined" style={{ fontSize: 20 }}>arrow_forward</span>
+                  <ArrowRight size={18} />
                 </>
               )}
             </button>

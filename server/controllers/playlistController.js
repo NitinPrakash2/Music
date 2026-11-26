@@ -1,8 +1,5 @@
 const { sql } = require('../db');
-const axios = require('axios');
-
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
-const CACHE_TTL = 3600000; // 1 hour
+const { youtubeSearch } = require('../utils/youtubeSearch');
 
 const PLAYLISTS = {
   trending: { query: 'trending music 2024 latest hits', maxResults: 20 },
@@ -14,24 +11,7 @@ const PLAYLISTS = {
 };
 
 const fetchFromYouTube = async (query, maxResults = 20) => {
-  const url = 'https://www.googleapis.com/youtube/v3/search';
-  const res = await axios.get(url, {
-    params: {
-      part: 'snippet',
-      q: query,
-      type: 'video',
-      videoCategoryId: '10',
-      maxResults,
-      key: YOUTUBE_API_KEY,
-    },
-  });
-
-  return res.data.items.map(item => ({
-    videoId: item.id.videoId,
-    title: item.snippet.title,
-    channel: item.snippet.channelTitle,
-    thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default.url,
-  }));
+  return youtubeSearch(query, { maxResults, videoCategoryId: '10' });
 };
 
 const getPlaylist = async (req, res) => {
@@ -48,7 +28,7 @@ const getPlaylist = async (req, res) => {
       SELECT results, created_at 
       FROM playlist_cache 
       WHERE playlist_type = ${type}
-      AND created_at > NOW() - INTERVAL '30 minutes'
+      AND created_at > NOW() - INTERVAL '6 hours'
       LIMIT 1
     `;
 
@@ -88,7 +68,7 @@ const getAllPlaylists = async (req, res) => {
         SELECT results 
         FROM playlist_cache 
         WHERE playlist_type = ${type}
-        AND created_at > NOW() - INTERVAL '30 minutes'
+        AND created_at > NOW() - INTERVAL '6 hours'
         LIMIT 1
       `;
 

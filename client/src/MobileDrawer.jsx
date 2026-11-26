@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { X, Home, Heart, Plus, ListMusic, Trash2, UserCog, LogOut } from 'lucide-react'
 import { usePlaylists } from './PlaylistContext'
 
 export default function MobileDrawer({ open, onClose, user, liked, navigate, onLogout, currentRoute }) {
@@ -65,11 +66,11 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src="/logo.png" alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+            <img src="/logo.svg" alt="Relaxify" style={{ width: 28, height: 28, borderRadius: 8 }} />
             <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>Relax<span style={{ color: '#f2ca50' }}>ify</span></span>
           </div>
           <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', cursor: 'pointer' }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
+            <X size={18} />
           </button>
         </div>
 
@@ -88,12 +89,12 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
         <div style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '8px 20px 4px' }}>Menu</div>
 
         <div style={navItem(isActive('/'))} onClick={() => go('/')}>
-          <span className="material-symbols-outlined" style={{ fontSize: 20, color: isActive('/') ? '#f2ca50' : '#555', fontVariationSettings: isActive('/') ? "'FILL' 1" : "'FILL' 0" }}>home</span>
+          <Home size={19} style={{ color: isActive('/') ? '#f2ca50' : '#555' }} />
           Home
         </div>
 
         <div style={navItem(isActive('/liked'))} onClick={() => go('/liked')}>
-          <span className="material-symbols-outlined" style={{ fontSize: 20, color: isActive('/liked') ? '#f2ca50' : '#555', fontVariationSettings: isActive('/liked') ? "'FILL' 1" : "'FILL' 0" }}>favorite</span>
+          <Heart size={19} style={{ color: isActive('/liked') ? '#f2ca50' : '#555' }} fill={isActive('/liked') ? '#f2ca50' : 'none'} />
           Liked Songs
           {likedCount > 0 && (
             <span style={{ marginLeft: 'auto', fontSize: 10, background: 'rgba(242,202,80,0.15)', color: '#f2ca50', borderRadius: 100, padding: '2px 7px', fontWeight: 700 }}>{likedCount}</span>
@@ -108,7 +109,7 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
           <button onClick={() => setShowInput(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#555', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 6 }}
             onMouseEnter={e => e.currentTarget.style.color = '#f2ca50'}
             onMouseLeave={e => e.currentTarget.style.color = '#555'}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add</span>
+            <Plus size={19} />
           </button>
         </div>
 
@@ -137,14 +138,14 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
           return (
             <div key={p.id} onClick={() => go(`/my-playlist/${p.id}`)}
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px 11px 20px', cursor: 'pointer', background: active ? 'rgba(242,202,80,0.06)' : 'transparent', borderLeft: active ? '3px solid #f2ca50' : '3px solid transparent', transition: 'all 0.15s' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 18, color: active ? '#f2ca50' : '#555', flexShrink: 0 }}>queue_music</span>
+              <ListMusic size={17} style={{ color: active ? '#f2ca50' : '#555', flexShrink: 0 }} />
               <span style={{ fontSize: 13, fontWeight: 600, color: active ? '#f2ca50' : '#a1a1aa', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
               <span style={{ fontSize: 11, color: '#3a3a3a', flexShrink: 0 }}>{p.song_count}</span>
               <button onClick={e => handleDelete(e, p.id)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3a', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 6, flexShrink: 0 }}
                 onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
                 onMouseLeave={e => e.currentTarget.style.color = '#3a3a3a'}>
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>delete</span>
+                <Trash2 size={15} />
               </button>
             </div>
           )
@@ -154,7 +155,7 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
         <div style={{ fontSize: 10, fontWeight: 700, color: '#3a3a3a', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '8px 20px 4px' }}>Account</div>
 
         <div style={navItem(isActive('/account'))} onClick={() => go('/account')}>
-          <span className="material-symbols-outlined" style={{ fontSize: 20, color: isActive('/account') ? '#f2ca50' : '#555' }}>manage_accounts</span>
+          <UserCog size={19} style={{ color: isActive('/account') ? '#f2ca50' : '#555' }} />
           Manage Account
         </div>
 
@@ -165,7 +166,7 @@ export default function MobileDrawer({ open, onClose, user, liked, navigate, onL
           style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#f87171', background: 'transparent', border: 'none', width: '100%', fontFamily: 'inherit', transition: 'background 0.15s' }}
           onMouseEnter={e => e.currentTarget.style.background = 'rgba(248,113,113,0.08)'}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>logout</span>
+          <LogOut size={19} />
           Sign Out
         </button>
         <div style={{ height: 20 }} />

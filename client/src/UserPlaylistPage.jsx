@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Loader2, ArrowLeft, ListMusic, PlayCircle, Shuffle, Repeat, AudioLines, Pause, MinusCircle } from 'lucide-react'
 import { apiFetch } from './api'
 import { usePlaylists } from './PlaylistContext'
 
@@ -78,7 +79,7 @@ export default function UserPlaylistPage({ playlistId, onPlayTrack, onSetQueue, 
     delBtn: { background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3a', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 6, transition: 'color 0.15s', flexShrink: 0 },
   }
 
-  if (loading) return <div style={P.empty}><span className="material-symbols-outlined spin" style={{ fontSize: 40, color: '#f2ca50' }}>autorenew</span></div>
+  if (loading) return <div style={P.empty}><Loader2 size={38} className="spin" style={{ color: '#f2ca50' }} /></div>
   if (!playlist) return <div style={P.empty}><p>Playlist not found</p></div>
 
   return (
@@ -87,10 +88,10 @@ export default function UserPlaylistPage({ playlistId, onPlayTrack, onSetQueue, 
         <button style={P.backBtn} onClick={() => navigate('/')}
           onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#fff' }}
           onMouseLeave={e => { e.currentTarget.style.background = '#1a1a1a'; e.currentTarget.style.color = '#888' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: 22 }}>arrow_back</span>
+          <ArrowLeft size={20} />
         </button>
         <div style={P.icon}>
-          <span className="material-symbols-outlined" style={{ fontSize: 28, color: '#f2ca50' }}>queue_music</span>
+          <ListMusic size={26} style={{ color: '#f2ca50' }} />
         </div>
         <div>
           <h1 style={P.title}>{playlist.name}</h1>
@@ -107,21 +108,21 @@ export default function UserPlaylistPage({ playlistId, onPlayTrack, onSetQueue, 
           <button style={P.playAllBtn} onClick={handlePlayAll}
             onMouseEnter={e => e.currentTarget.style.background = '#f5d470'}
             onMouseLeave={e => e.currentTarget.style.background = '#f2ca50'}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20, fontVariationSettings: "'FILL' 1" }}>play_circle</span>
+            <PlayCircle size={19} />
             Play All
           </button>
 
           <button style={P.iconBtn(false)} onClick={handleShuffle}
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
             onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}>
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>shuffle</span>
+            <Shuffle size={17} />
             Shuffle
           </button>
 
           <button style={P.iconBtn(loop)} onClick={toggleLoop}
             onMouseEnter={e => e.currentTarget.style.background = loop ? 'rgba(242,202,80,0.18)' : 'rgba(255,255,255,0.08)'}
             onMouseLeave={e => e.currentTarget.style.background = loop ? 'rgba(242,202,80,0.12)' : 'rgba(255,255,255,0.04)'}>
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>repeat</span>
+            <Repeat size={17} />
             {loop ? 'Loop On' : 'Loop'}
           </button>
         </div>
@@ -129,7 +130,7 @@ export default function UserPlaylistPage({ playlistId, onPlayTrack, onSetQueue, 
 
       {songs.length === 0 ? (
         <div style={P.empty}>
-          <span className="material-symbols-outlined" style={{ fontSize: 56, color: '#1e1e1e' }}>queue_music</span>
+          <ListMusic size={52} style={{ color: '#1e1e1e' }} />
           <p style={{ fontSize: 16, fontWeight: 600 }}>No songs yet</p>
           <p style={{ fontSize: 13, color: '#333' }}>Add songs from the home page or search</p>
         </div>
@@ -144,11 +145,11 @@ export default function UserPlaylistPage({ playlistId, onPlayTrack, onSetQueue, 
                 onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#111' }}
                 onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}>
 
-                <span style={{ width: 24, textAlign: 'center', fontSize: 13, color: active ? '#f2ca50' : '#555', flexShrink: 0 }}>
+                <span style={{ width: 24, textAlign: 'center', fontSize: 13, color: active ? '#f2ca50' : '#555', flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
                   {active && isPlaying
-                    ? <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#f2ca50' }}>graphic_eq</span>
+                    ? <AudioLines size={16} style={{ color: '#f2ca50' }} />
                     : active
-                    ? <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#f2ca50' }}>pause</span>
+                    ? <Pause size={16} style={{ color: '#f2ca50' }} />
                     : idx + 1}
                 </span>
 
@@ -166,7 +167,7 @@ export default function UserPlaylistPage({ playlistId, onPlayTrack, onSetQueue, 
                 <button style={P.delBtn} onClick={e => handleRemove(e, song.video_id)}
                   onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
                   onMouseLeave={e => e.currentTarget.style.color = '#3a3a3a'}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>remove_circle</span>
+                  <MinusCircle size={18} />
                 </button>
               </div>
             )

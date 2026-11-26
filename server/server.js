@@ -1,4 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config({
+  path: process.env.ENV_PATH || path.join(__dirname, '.env'),
+});
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
@@ -23,7 +27,14 @@ app.use(cors({
       process.env.CLIENT_ORIGIN,
       'http://localhost:5173',
     ].filter(Boolean)
-    if (!origin || allowed.includes(origin)) return callback(null, true)
+    if (
+      !origin ||
+      allowed.includes(origin) ||
+      origin.startsWith('http://127.0.0.1:') ||
+      origin.startsWith('http://localhost:')
+    ) {
+      return callback(null, true)
+    }
     callback(new Error('Not allowed by CORS'))
   },
   methods: ['GET', 'POST', 'DELETE', 'PUT'],
@@ -55,11 +66,51 @@ app.use('/api/user-playlists', userPlaylistsRoute);
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
-app.use((err, req, res, _next) => {
-  console.error('[UNHANDLED ERROR]', err.message);
-  res.status(500).json({ error: 'Internal server error' });
-});
+const startServer = ({ port = PORT, staticDir } = {}) => {
+  if (staticDir && fs.existsSync(staticDir)) {
+    app.use(express.static(staticDir));
+    app.use((req, res, next) => {
+      if (req.path.startsWith('/api') || req.path === '/health') return next();
+      res.sendFile(path.join(staticDir, 'index.html'));
+    });
+  }
 
-initDB()
-  .then(() => app.listen(PORT, () => console.log(`[SERVER] Running on http://localhost:${PORT}`)))
-  .catch((err) => { console.error('[DB INIT FAILED]', err.message); process.exit(1); });
+  app.use((err, req, res, _next) => {
+    console.error('[UNHANDLED ERROR]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  });
+
+  return new Promise((resolve) => {
+    const listenOn = (tryPort) => {
+      const server = app.listen(tryPort, '127.0.0.1', () => {
+        const addr = server.address();
+        const actualPort = typeof addr === 'object' && addr ? addr.port : tryPort;
+        console.log(`[SERVER] Running on http://127.0.0.1:${actualPort}`);
+        initDB().catch((err) => console.error('[DB INIT WARNING]', err.message));
+        resolve({ server, port: actualPort });
+      });
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && tryPort !== 0) {
+          listenOn(0);
+        } else {
+          throw err;
+        }
+      });
+    };
+    listenOn(port);
+  });
+};
+
+if (require.main === module) {
+  initDB()
+    .then(() => {
+      app.use((err, req, res, _next) => {
+        console.error('[UNHANDLED ERROR]', err.message);
+        res.status(500).json({ error: 'Internal server error' });
+      });
+      app.listen(PORT, () => console.log(`[SERVER] Running on http://localhost:${PORT}`));
+    })
+    .catch((err) => { console.error('[DB INIT FAILED]', err.message); process.exit(1); });
+}
+
+module.exports = { app, startServer };

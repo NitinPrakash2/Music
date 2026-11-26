@@ -1,5 +1,5 @@
-const axios = require('axios');
 const { sql } = require('../db');
+const { youtubeSearch } = require('../utils/youtubeSearch');
 
 const searchController = async (req, res) => {
   const raw = req.query.q;
@@ -19,24 +19,8 @@ const searchController = async (req, res) => {
       return res.json({ source: 'cache', results: cached[0].results });
     }
 
-    console.log(`[CACHE MISS] "${query}" — calling YouTube API`);
-
-    const ytRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-      params: {
-        part: 'snippet',
-        q: query,
-        type: 'video',
-        maxResults: 10,
-        key: process.env.YOUTUBE_API_KEY,
-      },
-    });
-
-    const results = ytRes.data.items.map((item) => ({
-      videoId:   item.id.videoId,
-      title:     item.snippet.title,
-      thumbnail: item.snippet.thumbnails.medium.url,
-      channel:   item.snippet.channelTitle,
-    }));
+    console.log(`[CACHE MISS] "${query}" — searching YouTube`);
+    const results = await youtubeSearch(query, { maxResults: 10 });
 
     // Upsert cache
     await sql`
