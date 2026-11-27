@@ -11,6 +11,7 @@ const { initDB } = require('./db');
 
 const searchRoute = require('./routes/search');
 const streamRoute = require('./routes/stream');
+const lyricsRoute = require('./routes/lyrics');
 const playlistRoute = require('./routes/playlist');
 const searchHistoryRoute = require('./routes/searchHistory');
 const searchSuggestionsRoute = require('./routes/searchSuggestions');
@@ -60,6 +61,7 @@ app.use('/api/auth/signup', authLimiter);
 
 app.use('/api/search', searchRoute);
 app.use('/api/stream', streamRoute);
+app.use('/api/lyrics', lyricsRoute);
 app.use('/api/playlists', playlistRoute);
 app.use('/api/search-history', searchHistoryRoute);
 app.use('/api/search-suggestions', searchSuggestionsRoute);

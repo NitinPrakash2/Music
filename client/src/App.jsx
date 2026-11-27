@@ -3,7 +3,7 @@ import {
   Search as SearchIcon, X, History, LogOut, UserCog,
   SkipBack, SkipForward, Play, Pause, Loader2,
   Heart, ChevronUp, ChevronDown, VolumeX, Volume1, Volume2,
-  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw, ListPlus
+  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw, ListPlus, Mic2
 } from 'lucide-react'
 import TrackMenu from './TrackMenu'
 import { resolveStreamUrl, triggerTrackDownload } from './nativeAudio'
@@ -62,10 +62,15 @@ function AppInner() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [npMenuOpen, setNpMenuOpen] = useState(false)
+  const [showLyrics, setShowLyrics] = useState(false)
+  const [lyricsData, setLyricsData] = useState({ synced: [], plain: '' })
+  const [lyricsLoading, setLyricsLoading] = useState(false)
+  const [rawTime, setRawTime] = useState(0)
   const [heroAmbientThumb, setHeroAmbientThumb] = useState('')
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
   const accountWrapRef = useRef(null)
   const npMenuBtnRef = useRef(null)
+  const activeLyricRef = useRef(null)
 
   useEffect(() => {
     const onOutside = (e) => {
@@ -117,6 +122,46 @@ function AppInner() {
       }))
     } catch {}
   }
+
+  // Fetch synced lyrics whenever activeItem changes
+  useEffect(() => {
+    if (!activeItem?.videoId || !activeItem?.title) {
+      setLyricsData({ synced: [], plain: '' })
+      return
+    }
+    let cancelled = false
+    setLyricsLoading(true)
+    setLyricsData({ synced: [], plain: '' })
+    fetch(`${API}/api/lyrics?videoId=${encodeURIComponent(activeItem.videoId)}&title=${encodeURIComponent(activeItem.title)}&channel=${encodeURIComponent(activeItem.channel || '')}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!cancelled) setLyricsData({ synced: d.synced || [], plain: d.plain || '' })
+      })
+      .catch(() => {
+        if (!cancelled) setLyricsData({ synced: [], plain: '' })
+      })
+      .finally(() => {
+        if (!cancelled) setLyricsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [activeItem?.videoId])
+
+  const activeLyricIdx = (() => {
+    const lines = lyricsData.synced
+    if (!lines.length) return -1
+    let idx = -1
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].time <= rawTime + 0.25) idx = i
+      else break
+    }
+    return idx
+  })()
+
+  useEffect(() => {
+    if (showLyrics && showCard && activeLyricRef.current) {
+      activeLyricRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [activeLyricIdx, showLyrics, showCard])
 
   // Keep refs in sync with state so closures always read current values
   useEffect(() => { queueRef.current = queue }, [queue])
@@ -234,6 +279,7 @@ function AppInner() {
   const handleTimeUpdate = () => {
     const audio = audioRef.current
     if (!audio) return
+    setRawTime(audio.currentTime || 0)
     setCurrentTime(fmt(audio.currentTime))
     const dur = audio.duration
     if (dur && isFinite(dur)) {
@@ -1012,6 +1058,14 @@ function AppInner() {
                     <Heart size={20} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
                   </button>
                   <button
+                    type="button"
+                    title={showLyrics ? 'Show Album Art' : 'Show Live Lyrics'}
+                    style={{ background: showLyrics ? 'rgba(242,202,80,0.16)' : 'none', border: showLyrics ? '1px solid rgba(242,202,80,0.35)' : '1px solid transparent', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: showLyrics ? '#f2ca50' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s' }}
+                    onClick={() => setShowLyrics(v => !v)}
+                  >
+                    <Mic2 size={17} />
+                  </button>
+                  <button
                     ref={npMenuBtnRef}
                     type="button"
                     title="Add to Playlist / Download"
@@ -1032,13 +1086,55 @@ function AppInner() {
                 </div>
               </div>
 
-              <div className="np-art-wrap">
-                <div className={`np-disc${isPlaying ? ' spinning' : ''}`}>
-                  <img src={activeItem.thumbnail} alt="" className="np-disc-img" />
-                  <div className="np-disc-grooves" />
-                  <div className="np-disc-hole" />
+              {showLyrics ? (
+                <div className="np-lyrics-wrap">
+                  {lyricsLoading ? (
+                    <div className="np-lyrics-empty">
+                      <Loader2 size={26} className="spin" style={{ color: '#f2ca50' }} />
+                      <span>Finding synced lyrics...</span>
+                    </div>
+                  ) : lyricsData.synced.length > 0 ? (
+                    <div className="np-lyrics-scroll">
+                      {lyricsData.synced.map((line, i) => {
+                        const isCur = i === activeLyricIdx
+                        const isPast = i < activeLyricIdx
+                        return (
+                          <p
+                            key={`${line.time}-${i}`}
+                            ref={isCur ? activeLyricRef : null}
+                            className={`np-lyric-line${isCur ? ' active' : ''}${isPast ? ' past' : ''}`}
+                            onClick={() => {
+                              if (audioRef.current) {
+                                audioRef.current.currentTime = line.time
+                                setRawTime(line.time)
+                              }
+                            }}
+                          >
+                            {line.text}
+                          </p>
+                        )
+                      })}
+                    </div>
+                  ) : lyricsData.plain ? (
+                    <div className="np-lyrics-scroll">
+                      <p className="np-lyrics-plain">{lyricsData.plain}</p>
+                    </div>
+                  ) : (
+                    <div className="np-lyrics-empty">
+                      <Mic2 size={28} style={{ color: '#52525b' }} />
+                      <span>Lyrics not available for this track</span>
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div className="np-art-wrap">
+                  <div className={`np-disc${isPlaying ? ' spinning' : ''}`}>
+                    <img src={activeItem.thumbnail} alt="" className="np-disc-img" />
+                    <div className="np-disc-grooves" />
+                    <div className="np-disc-hole" />
+                  </div>
+                </div>
+              )}
 
               <div className="np-meta">
                 <p className="np-title">{activeItem.title}</p>

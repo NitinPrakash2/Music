@@ -1840,3 +1840,61 @@ html, body { overflow-x: hidden; max-width: 100vw; }
     right: 6px !important;
   }
 }
+
+
+/* ── Spotify-Style Synced Lyrics in Now Playing Card ── */
+.np-lyrics-wrap {
+  width: 100%;
+  height: 240px;
+  margin: 8px 0 12px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 14%, #000 86%, transparent 100%);
+}
+.np-lyrics-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: 44px 20px;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.np-lyrics-scroll::-webkit-scrollbar { display: none; }
+.np-lyric-line {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+  transform-origin: left center;
+  transition: color 0.25s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+}
+.np-lyric-line.past { color: rgba(255, 255, 255, 0.45); }
+.np-lyric-line:hover { color: rgba(255, 255, 255, 0.78); }
+.np-lyric-line.active {
+  color: #f2ca50;
+  transform: scale(1.04);
+  text-shadow: 0 0 24px rgba(242, 202, 80, 0.35);
+}
+.np-lyrics-plain {
+  font-size: 14px;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: pre-wrap;
+  text-align: center;
+}
+.np-lyrics-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #71717a;
+}
