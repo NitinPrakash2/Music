@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Play, Pause, Heart, MoreVertical, Loader2, AlertCircle,
   CheckCircle2, RefreshCw, TrendingUp, Music, Disc3,
-  ListMusic, Sparkles, Flame, ChevronLeft, ChevronRight
+  ListMusic, Sparkles, Flame, ChevronLeft, ChevronRight, History
 } from 'lucide-react';
 import TrackMenu from './TrackMenu';
 
@@ -40,7 +40,11 @@ function TrackCard({ item, activeItem, isPlaying, downloading, liked, onPlayTrac
       </div>
 
       {/* Info */}
-      <div className="track-info" style={{ cursor: 'pointer' }} onClick={() => window.location.hash = `/playlist/${playlistKey}`}>
+      <div
+        className="track-info"
+        style={{ cursor: 'pointer' }}
+        onClick={() => playlistKey ? (window.location.hash = `/playlist/${playlistKey}`) : onPlayTrack(item)}
+      >
         <p className="track-title">{item.title}</p>
         <p className="track-channel">{item.channel}</p>
       </div>
@@ -67,7 +71,7 @@ function TrackCard({ item, activeItem, isPlaying, downloading, liked, onPlayTrac
   )
 }
 
-export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike, onAmbientChange }) {
+export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike, onAmbientChange, recentlyPlayed = [], recentSearches = [] }) {
   const [playlists, setPlaylists] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,6 +80,9 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   const [menuOpen, setMenuOpen] = useState(null);
   const [heroIdx, setHeroIdx] = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
+  const [recommended, setRecommended] = useState([]);
+  const [recReason, setRecReason] = useState('');
+  const [recAi, setRecAi] = useState(false);
   const homeRef = useRef(null);
 
   const heroSlides = playlists.trending || [];
@@ -151,7 +158,61 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
     }, { threshold: 0.08 });
     document.querySelectorAll('.playlist-section').forEach(el => observer.observe(el));
     return () => observer.disconnect();
-  }, [loading]);
+  }, [loading, recentlyPlayed.length, recommended.length]);
+
+  // Fetch AI-powered personalized recommendations from listening & search history
+  const recentSig = recentlyPlayed.slice(0, 6).map(t => t.videoId).join(',');
+  const searchSig = (recentSearches || []).slice(0, 5).map(s => typeof s === 'string' ? s : s.query).join(',');
+  const likedSig = Object.keys(liked || {}).slice(0, 4).join(',');
+
+  useEffect(() => {
+    const likedTracks = Object.values(liked || {}).filter(v => v && v.videoId);
+    const searchQueries = (recentSearches || []).map(s => typeof s === 'string' ? s : s.query).filter(Boolean);
+    if (!recentlyPlayed.length && !searchQueries.length && !likedTracks.length) {
+      setRecommended([]);
+      setRecReason('');
+      return;
+    }
+
+    const cacheKey = `rx_rec_${recentSig}_${searchSig}_${likedSig}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.tracks?.length) {
+          setRecommended(parsed.tracks);
+          setRecReason(parsed.reason || '');
+          setRecAi(Boolean(parsed.aiPowered));
+          return;
+        }
+      }
+    } catch {}
+
+    let cancelled = false;
+    fetch(`${API}/api/recommendations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recentTracks: recentlyPlayed.slice(0, 10).map(({ videoId, title, channel }) => ({ videoId, title, channel })),
+        searchQueries: searchQueries.slice(0, 8),
+        likedTracks: likedTracks.slice(0, 8).map(({ videoId, title, channel }) => ({ videoId, title, channel })),
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return;
+        const tracks = Array.isArray(d.tracks) ? d.tracks.slice(0, 6) : [];
+        setRecommended(tracks);
+        setRecReason(d.reason || '');
+        setRecAi(Boolean(d.aiPowered));
+        if (tracks.length > 0) {
+          try { sessionStorage.setItem(cacheKey, JSON.stringify({ tracks, reason: d.reason || '', aiPowered: Boolean(d.aiPowered) })); } catch {}
+        }
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [recentSig, searchSig, likedSig]);
 
   useEffect(() => {
     if (loading) return;
@@ -303,6 +364,56 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
           </div>
         </div>
       ) : null}
+
+      {recentlyPlayed.length > 0 && (
+        <div className="playlist-section visible">
+          <div className="playlist-header">
+            <h2><History size={20} style={{ color: '#f2ca50' }} />Recently Played</h2>
+          </div>
+          <div className="playlist-grid">
+            {recentlyPlayed.slice(0, 6).map((item) => (
+              <TrackCard
+                key={`recent-${item.videoId}`}
+                item={item}
+                activeItem={activeItem}
+                isPlaying={isPlaying}
+                downloading={downloading}
+                liked={liked}
+                onPlayTrack={(t) => onPlayTrack(t, recentlyPlayed)}
+                onToggleLike={onToggleLike}
+                playlistKey=""
+                menuOpen={menuOpen}
+                setMenuOpen={setMenuOpen}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {recommended.length > 0 && (
+        <div className="playlist-section visible">
+          <div className="playlist-header">
+            <h2><Sparkles size={20} style={{ color: '#f2ca50' }} />Recommended for You</h2>
+          </div>
+          <div className="playlist-grid">
+            {recommended.slice(0, 6).map((item) => (
+              <TrackCard
+                key={`rec-${item.videoId}`}
+                item={item}
+                activeItem={activeItem}
+                isPlaying={isPlaying}
+                downloading={downloading}
+                liked={liked}
+                onPlayTrack={(t) => onPlayTrack(t, recommended)}
+                onToggleLike={onToggleLike}
+                playlistKey=""
+                menuOpen={menuOpen}
+                setMenuOpen={setMenuOpen}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {categories.map(({ key, title, Icon }) => (
         playlists[key]?.length > 0 && (

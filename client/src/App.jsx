@@ -69,6 +69,15 @@ function AppInner() {
   const [lyricsData, setLyricsData] = useState({ synced: [], plain: '' })
   const [lyricsLoading, setLyricsLoading] = useState(false)
   const [rawTime, setRawTime] = useState(0)
+  const [recentlyPlayed, setRecentlyPlayed] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('rx_recently_played') || '[]')
+      if (Array.isArray(stored) && stored.length > 0) return stored
+      const pb = JSON.parse(localStorage.getItem('rx_playback_state') || 'null')
+      if (pb?.item?.videoId) return [pb.item]
+      return []
+    } catch { return [] }
+  })
   const [heroAmbientThumb, setHeroAmbientThumb] = useState('')
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
   const accountWrapRef = useRef(null)
@@ -502,8 +511,20 @@ function AppInner() {
     setVolume(v)
   })
 
+  const recordRecentlyPlayed = (item) => {
+    if (!item?.videoId) return
+    setRecentlyPlayed(prev => {
+      const next = [item, ...prev.filter(x => x.videoId !== item.videoId)].slice(0, 20)
+      try { localStorage.setItem('rx_recently_played', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+
   const play = async (item) => {
-    if (item?.videoId) playedHistoryRef.current.add(item.videoId)
+    if (item?.videoId) {
+      playedHistoryRef.current.add(item.videoId)
+      recordRecentlyPlayed(item)
+    }
     streamRetryRef.current = { videoId: item?.videoId || null, count: 0 }
     pendingResumeTimeRef.current = 0
     setStreamError('')
@@ -725,7 +746,7 @@ function AppInner() {
 
   let content
   if (route === '/' || route === '') {
-    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} />
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} recentlyPlayed={recentlyPlayed} recentSearches={recentSearches} />
   } else if (route.startsWith('/search')) {
     const params = new URLSearchParams(route.split('?')[1])
     const q = params.get('q') || ''
@@ -741,7 +762,7 @@ function AppInner() {
   } else if (route === '/account') {
     content = <AccountPage user={user} navigate={navigate} onLogout={handleLogout} />
   } else {
-    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} />
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} recentlyPlayed={recentlyPlayed} recentSearches={recentSearches} />
   }
 
   if (!isOnline) {
