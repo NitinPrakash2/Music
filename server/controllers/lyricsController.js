@@ -3,6 +3,13 @@ const { sql } = require('../db');
 
 const MASHUP_OR_MIX_RE = /\b(mashup|jukebox|nonstop|non-stop|medley|megamix|mega\s*mix|all\s*songs|best\s*of|compilation|back\s*to\s*back|lofi\s*mix|dj\s*mix|1\s*hour|2\s*hour|3\s*hour|audio\s*jukebox|full\s*album)\b/i;
 
+const GENERIC_TITLE_WORDS = new Set([
+  'official', 'lyrical', 'lyric', 'lyrics', 'video', 'audio', 'song', 'songs',
+  'full', 'hd', '4k', '8k', 'status', 'whatsapp', 'reel', 'reels', 'shorts',
+  'lofi', 'slowed', 'reverb', 'unplugged', 'cover', 'remix', 'version', 'from',
+  'music', 'feat', 'ft',
+]);
+
 const cleanTitle = (raw = '') => {
   let s = raw
     .replace(/&amp;/g, '&')
@@ -11,7 +18,8 @@ const cleanTitle = (raw = '') => {
     .split('|')[0];
 
   s = s.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ');
-  s = s.replace(/\b(full\s*(video\s*)?song|official\s*(music\s*)?(video|audio)|lyrical\s*video|lyrics\s*video|video\s*song|audio\s*song|4k|8k|hd|slowed\s*\+?\s*reverb|lofi)\b/gi, ' ');
+  s = s.replace(/\s+-\s+(official|lyrical|lyric|lyrics|full|video|audio|song|hd|4k|8k|status|whatsapp|reel|shorts|lofi|slowed|reverb|unplugged|cover|remix|dj).*$/i, '');
+  s = s.replace(/\b(full\s*(video\s*)?song|official\s*(music\s*)?(video|audio)|lyrical\s*(video)?|lyrics\s*(video)?|video\s*song|audio\s*song|4k|8k|hd|slowed\s*\+?\s*reverb|lofi)\b/gi, ' ');
   s = s.replace(/\s+/g, ' ').trim();
   return s.replace(/^[\-\s]+|[\-\s]+$/g, '').trim();
 };
@@ -40,13 +48,34 @@ const isMostlyLatin = (text = '') => {
 };
 
 const normalizeWords = (s = '') =>
-  s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1);
+  s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1 && !GENERIC_TITLE_WORDS.has(w));
 
-const scoreHit = (hit, cleanQ, targetDuration) => {
+const scoreHit = (hit, cleanQ, rawTitle, channel, targetDuration) => {
   let score = 0;
   if (hit.syncedLyrics) score += 50;
   else if (hit.plainLyrics) score += 10;
   else return -100;
+
+  // Title word overlap — require meaningful match with song title
+  const qWords = normalizeWords(cleanQ);
+  const tWords = new Set(normalizeWords(hit.trackName || ''));
+  let overlap = 0;
+  for (const w of qWords) if (tWords.has(w)) overlap++;
+  if (qWords.length > 0 && overlap === 0) return -100;
+  if (qWords.length > 1 && overlap / qWords.length < 0.5) return -100;
+
+  score += (overlap / Math.max(1, qWords.length)) * 60;
+  score -= Math.max(0, tWords.size - overlap) * 6;
+
+  // Artist / channel / rawTitle credit match bonus
+  const contextText = `${rawTitle} ${channel}`.toLowerCase();
+  const artistWords = normalizeWords(hit.artistName || '');
+  for (const aw of artistWords) {
+    if (aw.length >= 4 && contextText.includes(aw)) {
+      score += 12;
+      break;
+    }
+  }
 
   const textSample = hit.syncedLyrics || hit.plainLyrics || '';
   // Prefer Roman/Latin script when song title is in English/Hinglish
@@ -55,18 +84,11 @@ const scoreHit = (hit, cleanQ, targetDuration) => {
     else score -= 25;
   }
 
-  // Title word overlap
-  const qWords = normalizeWords(cleanQ);
-  const tWords = new Set(normalizeWords(hit.trackName || ''));
-  let overlap = 0;
-  for (const w of qWords) if (tWords.has(w)) overlap++;
-  score += overlap * 15;
-
   // Duration closeness bonus if known
   if (targetDuration > 0 && hit.duration > 0) {
     const diff = Math.abs(hit.duration - targetDuration);
     if (diff <= 5) score += 25;
-    else if (diff <= 15) score += 10;
+    else if (diff <= 15) score += 12;
     else if (diff > 60) score -= 20;
   }
 
@@ -93,7 +115,7 @@ const getLyrics = async (req, res) => {
     return res.json({ synced: [], plain: '', disabled: true });
   }
 
-  const cacheKey = videoId ? `v2:${videoId}` : null;
+  const cacheKey = videoId ? `v3:${videoId}` : null;
 
   try {
     if (cacheKey) {
@@ -104,28 +126,26 @@ const getLyrics = async (req, res) => {
     }
 
     const cleaned = cleanTitle(title);
-    const parts = cleaned.split(/\s+-\s+/);
+    const parts = cleaned.split(/\s+-\s+/).filter((p) => normalizeWords(p).length > 0);
     const candidatesQueries = [
       cleaned,
       parts.length > 1 ? parts[1] : null,
-      channel ? `${parts[0]} ${channel.replace(/\s*-\s*Topic$/i, '')}`.trim() : null,
+      parts.length > 1 ? parts[0] : null,
     ].filter(Boolean);
 
     let allHits = [];
-    for (const q of candidatesQueries) {
+    for (const q of [...new Set(candidatesQueries)]) {
       const hits = await searchLrcLib(q);
       allHits = allHits.concat(hits);
-      // If we already found a strong Latin synced match, stop early
-      const strong = hits.find((h) => h.syncedLyrics && (!isMostlyLatin(cleaned) || isMostlyLatin(h.syncedLyrics)));
-      if (strong && normalizeWords(cleaned).some((w) => normalizeWords(strong.trackName).includes(w))) {
-        break;
-      }
+      // If we already found a strong Latin synced match for the title, stop early
+      const strong = hits.find((h) => scoreHit(h, cleaned, title, channel, durNum) >= 100);
+      if (strong) break;
     }
 
     let bestMatch = null;
     let bestScore = -Infinity;
     for (const hit of allHits) {
-      const s = scoreHit(hit, cleaned, durNum);
+      const s = scoreHit(hit, cleaned, title, channel, durNum);
       if (s > bestScore) {
         bestScore = s;
         bestMatch = hit;
