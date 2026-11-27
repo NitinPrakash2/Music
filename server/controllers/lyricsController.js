@@ -1,5 +1,7 @@
 const axios = require('axios');
 const { sql } = require('../db');
+const { resolveAudioUrl } = require('./streamController');
+const { alignLyricsWithAI } = require('../utils/aiLyricsSync');
 
 const MASHUP_OR_MIX_RE = /\b(mashup|jukebox|nonstop|non-stop|medley|megamix|mega\s*mix|all\s*songs|best\s*of|compilation|back\s*to\s*back|lofi\s*mix|dj\s*mix|1\s*hour|2\s*hour|3\s*hour|audio\s*jukebox|full\s*album)\b/i;
 
@@ -62,15 +64,23 @@ const isMostlyLatin = (text = '') => {
 const normalizeWords = (s = '') =>
   s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1 && !GENERIC_TITLE_WORDS.has(w));
 
+const NON_SONG_HIT_RE = /\b(episode|podcast|diary|audiobook|story|speech|chapter)\b/i;
+
 const scoreHit = (hit, cleanQ, rawTitle, channel, targetDuration) => {
   let score = 0;
   if (hit.syncedLyrics) score += 50;
   else if (hit.plainLyrics) score += 10;
   else return -100;
 
-  // Title word overlap — require meaningful match with song title
+  const trackRaw = hit.trackName || '';
+  if (NON_SONG_HIT_RE.test(trackRaw) || NON_SONG_HIT_RE.test(hit.albumName || '')) {
+    if (!NON_SONG_HIT_RE.test(rawTitle)) return -100;
+  }
+
+  // Strip parentheticals like (From "Movie") before comparing title words
+  const trackClean = trackRaw.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ');
   const qWords = normalizeWords(cleanQ);
-  const tWords = new Set(normalizeWords(hit.trackName || ''));
+  const tWords = new Set(normalizeWords(trackClean));
   let overlap = 0;
   for (const w of qWords) if (tWords.has(w)) overlap++;
   if (qWords.length > 0 && overlap === 0) return -100;
@@ -96,12 +106,14 @@ const scoreHit = (hit, cleanQ, rawTitle, channel, targetDuration) => {
     else score -= 25;
   }
 
-  // Duration closeness bonus if known
+  // Duration closeness bonus/penalty — crucial so edited YouTube intros don't mismatch extended versions
   if (targetDuration > 0 && hit.duration > 0) {
     const diff = Math.abs(hit.duration - targetDuration);
-    if (diff <= 5) score += 25;
-    else if (diff <= 15) score += 12;
-    else if (diff > 60) score -= 20;
+    if (diff <= 3) score += 60;
+    else if (diff <= 8) score += 35;
+    else if (diff <= 18) score += 10;
+    else if (diff > 90) score -= 80;
+    else if (diff > 30) score -= 40;
   }
 
   return score;
@@ -127,7 +139,7 @@ const getLyrics = async (req, res) => {
     return res.json({ synced: [], plain: '', disabled: true });
   }
 
-  const cacheKey = videoId ? `v4:${videoId}` : null;
+  const cacheKey = videoId ? `v6:${videoId}:${durNum > 0 ? Math.round(durNum / 5) * 5 : 0}` : null;
 
   try {
     if (cacheKey) {
@@ -164,14 +176,32 @@ const getLyrics = async (req, res) => {
       }
     }
 
+    let syncedLines = bestMatch && bestScore > 0 && bestMatch.syncedLyrics ? parseLrc(bestMatch.syncedLyrics) : [];
+    let aiSynced = false;
+
+    // Optional AI Audio-to-Lyrics alignment (Groq Whisper primary, Gemini fallback)
+    if ((process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY) && videoId && syncedLines.length > 0 && (durNum === 0 || Math.abs((bestMatch?.duration || 0) - durNum) > 3)) {
+      try {
+        const audioInfo = await resolveAudioUrl(`https://www.youtube.com/watch?v=${videoId}`);
+        const aligned = await alignLyricsWithAI({ lines: syncedLines, audioStreamUrl: audioInfo?.url });
+        if (aligned?.lines?.length) {
+          syncedLines = aligned.lines;
+          aiSynced = true;
+        }
+      } catch (e) {
+        console.warn('[LYRICS AI SYNC]', e.message);
+      }
+    }
+
     const payload = bestMatch && bestScore > 0
       ? {
-          synced: bestMatch.syncedLyrics ? parseLrc(bestMatch.syncedLyrics) : [],
+          synced: syncedLines,
           plain: bestMatch.plainLyrics || '',
           trackName: bestMatch.trackName || cleaned,
           artistName: bestMatch.artistName || channel || '',
+          aiSynced,
         }
-      : { synced: [], plain: '', trackName: cleaned, artistName: channel || '' };
+      : { synced: [], plain: '', trackName: cleaned, artistName: channel || '', aiSynced: false };
 
     if (cacheKey) {
       await sql`

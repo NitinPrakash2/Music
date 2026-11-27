@@ -27,6 +27,15 @@ const isMusicCandidate = (title = '', seconds = 0) => {
   return true;
 };
 
+// Prefer Studio / Official Audio / Topic tracks so lyrics timestamps align cleanly
+const audioPriorityScore = (title = '', channel = '') => {
+  let s = 0;
+  if (/\s*-\s*Topic$/i.test(channel)) s += 3;
+  if (/\b(official\s*audio|audio\s*only)\b/i.test(title)) s += 2;
+  if (/\b(lyrical|lyrics\s*video)\b/i.test(title)) s -= 1;
+  return s;
+};
+
 /**
  * Search YouTube Music using Data API v3 (category 10 + contentDetails Shorts filter)
  * with zero-quota yt-search fallback.
@@ -69,13 +78,17 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
 
       const filtered = rawItems
         .filter((item) => isMusicCandidate(item.snippet?.title, durations[item.id?.videoId] || 0))
-        .slice(0, maxResults)
-        .map((item) => ({
+        .map((item, idx) => ({
           videoId: item.id.videoId,
           title: item.snippet.title,
           channel: item.snippet.channelTitle,
+          duration: durations[item.id?.videoId] || 0,
           thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
-        }));
+          _rank: idx - audioPriorityScore(item.snippet.title, item.snippet.channelTitle) * 1.5,
+        }))
+        .sort((a, b) => a._rank - b._rank)
+        .slice(0, maxResults)
+        .map(({ _rank, ...rest }) => rest);
 
       if (filtered.length > 0) return filtered;
     } catch (err) {
@@ -89,13 +102,17 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
   const r = await yts(searchTerm);
   return (r.videos || [])
     .filter((v) => isMusicCandidate(v.title, v.seconds || 0))
-    .slice(0, maxResults)
-    .map((v) => ({
+    .map((v, idx) => ({
       videoId: v.videoId,
       title: v.title,
       channel: v.author?.name || 'YouTube',
+      duration: v.seconds || 0,
       thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
-    }));
+      _rank: idx - audioPriorityScore(v.title, v.author?.name || '') * 1.5,
+    }))
+    .sort((a, b) => a._rank - b._rank)
+    .slice(0, maxResults)
+    .map(({ _rank, ...rest }) => rest);
 };
 
 module.exports = { youtubeSearch };

@@ -23,9 +23,12 @@ import MobileDrawer from './MobileDrawer'
 const API = import.meta.env.VITE_API_URL || ''
 
 const fmt = (s) => {
-  if (!s || isNaN(s)) return '0:00'
-  const m = Math.floor(s / 60)
-  const sec = Math.floor(s % 60).toString().padStart(2, '0')
+  if (!s || isNaN(s) || s < 0) return '0:00'
+  const total = Math.floor(s)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const sec = (total % 60).toString().padStart(2, '0')
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec}`
   return `${m}:${sec}`
 }
 
@@ -65,7 +68,6 @@ function AppInner() {
   const [showLyrics, setShowLyrics] = useState(false)
   const [lyricsData, setLyricsData] = useState({ synced: [], plain: '' })
   const [lyricsLoading, setLyricsLoading] = useState(false)
-  const [lyricOffset, setLyricOffset] = useState(0)
   const [rawTime, setRawTime] = useState(0)
   const [heroAmbientThumb, setHeroAmbientThumb] = useState('')
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
@@ -125,66 +127,44 @@ function AppInner() {
     } catch {}
   }
 
-  // Load per-track lyric sync offset when activeItem changes
-  useEffect(() => {
-    const vid = activeItem?.videoId
-    if (!vid) { setLyricOffset(0); return }
-    try {
-      const saved = parseFloat(localStorage.getItem(`rx_lyric_offset_${vid}`) || '0')
-      setLyricOffset(Number.isFinite(saved) ? saved : 0)
-    } catch { setLyricOffset(0) }
-  }, [activeItem?.videoId])
-
-  const adjustLyricOffset = (delta) => {
-    setLyricOffset(prev => {
-      const next = delta === 0 ? 0 : Math.round((prev + delta) * 10) / 10
-      if (activeItem?.videoId) {
-        try {
-          if (next === 0) localStorage.removeItem(`rx_lyric_offset_${activeItem.videoId}`)
-          else localStorage.setItem(`rx_lyric_offset_${activeItem.videoId}`, String(next))
-        } catch {}
-      }
-      return next
-    })
-  }
-
-  // Fetch synced lyrics whenever activeItem changes, or retry on card/lyrics open if earlier fetch failed
+  // Fetch synced lyrics whenever activeItem changes, or retry when real audio duration loads
   useEffect(() => {
     const vid = activeItem?.videoId
     const title = activeItem?.title
+    const dur = Math.round(activeItem?.duration || duration || audioRef.current?.duration || 0)
     if (!vid || !title) {
-      lyricsAttemptRef.current = { videoId: null, ok: false, tries: 0 }
+      lyricsAttemptRef.current = { videoId: null, ok: false, tries: 0, durSent: 0 }
       setLyricsData({ synced: [], plain: '', disabled: false })
       return
     }
     const isNewTrack = lyricsAttemptRef.current.videoId !== vid
-    if (!isNewTrack && lyricsAttemptRef.current.ok) return
+    if (!isNewTrack && lyricsAttemptRef.current.ok && (lyricsAttemptRef.current.durSent > 0 || dur === 0)) return
 
     let cancelled = false
     let retryTimer = null
     if (isNewTrack) {
-      lyricsAttemptRef.current = { videoId: vid, ok: false, tries: 0 }
+      lyricsAttemptRef.current = { videoId: vid, ok: false, tries: 0, durSent: 0 }
       setLyricsData({ synced: [], plain: '', disabled: false })
     }
 
     const fetchLyrics = () => {
       if (cancelled) return
       setLyricsLoading(true)
-      const dur = Math.round(activeItem.duration || duration || audioRef.current?.duration || 0)
-      fetch(`${API}/api/lyrics?videoId=${encodeURIComponent(vid)}&title=${encodeURIComponent(title)}&channel=${encodeURIComponent(activeItem.channel || '')}${dur > 0 ? `&duration=${dur}` : ''}`)
+      const currentDur = Math.round(activeItem?.duration || duration || audioRef.current?.duration || 0)
+      fetch(`${API}/api/lyrics?videoId=${encodeURIComponent(vid)}&title=${encodeURIComponent(title)}&channel=${encodeURIComponent(activeItem.channel || '')}${currentDur > 0 ? `&duration=${currentDur}` : ''}`)
         .then(r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
           return r.json()
         })
         .then(d => {
           if (cancelled) return
-          lyricsAttemptRef.current = { videoId: vid, ok: true, tries: 0 }
+          lyricsAttemptRef.current = { videoId: vid, ok: true, tries: 0, durSent: currentDur }
           setLyricsData({ synced: d.synced || [], plain: d.plain || '', disabled: Boolean(d.disabled) })
         })
         .catch(() => {
           if (cancelled) return
           const nextTries = (lyricsAttemptRef.current.tries || 0) + 1
-          lyricsAttemptRef.current = { videoId: vid, ok: false, tries: nextTries }
+          lyricsAttemptRef.current = { videoId: vid, ok: false, tries: nextTries, durSent: 0 }
           if (nextTries <= 2) {
             retryTimer = setTimeout(fetchLyrics, 2500)
           }
@@ -199,7 +179,7 @@ function AppInner() {
       cancelled = true
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [activeItem?.videoId, showLyrics, showCard])
+  }, [activeItem?.videoId, showLyrics, showCard, Math.round(duration || 0)])
 
   // High-precision 50ms clock while lyrics are visible for real-time Spotify-like sync
   useEffect(() => {
@@ -233,10 +213,9 @@ function AppInner() {
 
   const activeLyricIdx = (() => {
     if (!displayLyrics.length) return -1
-    const syncTime = rawTime + lyricOffset + 0.1
     let idx = -1
     for (let i = 0; i < displayLyrics.length; i++) {
-      if (displayLyrics[i].time <= syncTime) idx = i
+      if (displayLyrics[i].time <= rawTime + 0.08) idx = i
       else break
     }
     return idx
@@ -1180,46 +1159,31 @@ function AppInner() {
                       <span>Finding synced lyrics...</span>
                     </div>
                   ) : displayLyrics.length > 0 ? (
-                    <>
-                      <div className="np-lyrics-scroll">
-                        {displayLyrics.map((line, i) => {
-                          const isCur = i === activeLyricIdx
-                          const isPast = i < activeLyricIdx
-                          return (
-                            <div
-                              key={line.key}
-                              ref={isCur ? activeLyricRef : null}
-                              className={`np-lyric-line${line.isBreak ? ' is-break' : ''}${isCur ? ' active' : ''}${isPast ? ' past' : ''}`}
-                              onClick={() => {
-                                if (audioRef.current) {
-                                  const target = Math.max(0, line.time - lyricOffset)
-                                  audioRef.current.currentTime = target
-                                  setRawTime(target)
-                                }
-                              }}
-                            >
-                              {line.isBreak ? (
-                                <span className="np-lyric-dots" aria-label="Instrumental">
-                                  <span /><span /><span />
-                                </span>
-                              ) : line.text}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      <div className="np-lyric-sync" title="Adjust lyrics timing if out of sync with video">
-                        <button type="button" onClick={() => adjustLyricOffset(-0.5)}>-0.5s</button>
-                        <button
-                          type="button"
-                          className={lyricOffset !== 0 ? 'has-offset' : ''}
-                          onClick={() => adjustLyricOffset(0)}
-                          title="Tap to reset sync"
-                        >
-                          {lyricOffset === 0 ? 'Sync' : `${lyricOffset > 0 ? '+' : ''}${lyricOffset.toFixed(1)}s`}
-                        </button>
-                        <button type="button" onClick={() => adjustLyricOffset(0.5)}>+0.5s</button>
-                      </div>
-                    </>
+                    <div className="np-lyrics-scroll">
+                      {displayLyrics.map((line, i) => {
+                        const isCur = i === activeLyricIdx
+                        const isPast = i < activeLyricIdx
+                        return (
+                          <div
+                            key={line.key}
+                            ref={isCur ? activeLyricRef : null}
+                            className={`np-lyric-line${line.isBreak ? ' is-break' : ''}${isCur ? ' active' : ''}${isPast ? ' past' : ''}`}
+                            onClick={() => {
+                              if (audioRef.current) {
+                                audioRef.current.currentTime = line.time
+                                setRawTime(line.time)
+                              }
+                            }}
+                          >
+                            {line.isBreak ? (
+                              <span className="np-lyric-dots" aria-label="Instrumental">
+                                <span /><span /><span />
+                              </span>
+                            ) : line.text}
+                          </div>
+                        )
+                      })}
+                    </div>
                   ) : lyricsData.plain ? (
                     <div className="np-lyrics-scroll">
                       <p className="np-lyrics-plain">{lyricsData.plain}</p>
