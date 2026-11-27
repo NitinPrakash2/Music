@@ -110,6 +110,7 @@ function AppInner() {
   const lastSavedTimeRef = useRef(0)
   const playedHistoryRef = useRef(new Set())
   const streamRetryRef = useRef({ videoId: null, count: 0 })
+  const lyricsAttemptRef = useRef({ videoId: null, ok: false, tries: 0 })
 
   const savePlaybackState = (item, time, dur, q) => {
     if (!item?.videoId) return
@@ -123,28 +124,58 @@ function AppInner() {
     } catch {}
   }
 
-  // Fetch synced lyrics whenever activeItem changes
+  // Fetch synced lyrics whenever activeItem changes, or retry on card/lyrics open if earlier fetch failed
   useEffect(() => {
-    if (!activeItem?.videoId || !activeItem?.title) {
-      setLyricsData({ synced: [], plain: '' })
+    const vid = activeItem?.videoId
+    const title = activeItem?.title
+    if (!vid || !title) {
+      lyricsAttemptRef.current = { videoId: null, ok: false, tries: 0 }
+      setLyricsData({ synced: [], plain: '', disabled: false })
       return
     }
+    const isNewTrack = lyricsAttemptRef.current.videoId !== vid
+    if (!isNewTrack && lyricsAttemptRef.current.ok) return
+
     let cancelled = false
-    setLyricsLoading(true)
-    setLyricsData({ synced: [], plain: '' })
-    fetch(`${API}/api/lyrics?videoId=${encodeURIComponent(activeItem.videoId)}&title=${encodeURIComponent(activeItem.title)}&channel=${encodeURIComponent(activeItem.channel || '')}`)
-      .then(r => r.json())
-      .then(d => {
-        if (!cancelled) setLyricsData({ synced: d.synced || [], plain: d.plain || '' })
-      })
-      .catch(() => {
-        if (!cancelled) setLyricsData({ synced: [], plain: '' })
-      })
-      .finally(() => {
-        if (!cancelled) setLyricsLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [activeItem?.videoId])
+    let retryTimer = null
+    if (isNewTrack) {
+      lyricsAttemptRef.current = { videoId: vid, ok: false, tries: 0 }
+      setLyricsData({ synced: [], plain: '', disabled: false })
+    }
+
+    const fetchLyrics = () => {
+      if (cancelled) return
+      setLyricsLoading(true)
+      const dur = Math.round(audioRef.current?.duration || 0)
+      fetch(`${API}/api/lyrics?videoId=${encodeURIComponent(vid)}&title=${encodeURIComponent(title)}&channel=${encodeURIComponent(activeItem.channel || '')}${dur > 0 ? `&duration=${dur}` : ''}`)
+        .then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        })
+        .then(d => {
+          if (cancelled) return
+          lyricsAttemptRef.current = { videoId: vid, ok: true, tries: 0 }
+          setLyricsData({ synced: d.synced || [], plain: d.plain || '', disabled: Boolean(d.disabled) })
+        })
+        .catch(() => {
+          if (cancelled) return
+          const nextTries = (lyricsAttemptRef.current.tries || 0) + 1
+          lyricsAttemptRef.current = { videoId: vid, ok: false, tries: nextTries }
+          if (nextTries <= 2) {
+            retryTimer = setTimeout(fetchLyrics, 2500)
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLyricsLoading(false)
+        })
+    }
+
+    fetchLyrics()
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [activeItem?.videoId, showLyrics, showCard])
 
   const activeLyricIdx = (() => {
     const lines = lyricsData.synced
@@ -1045,22 +1076,23 @@ function AppInner() {
                         </div>
                       </div>
                     )}
-                    <button className="np-vol-btn" onClick={() => setShowVol(v => !v)}>
-                      {volume === 0 ? <VolumeX size={19} /> : volume < 0.5 ? <Volume1 size={19} /> : <Volume2 size={19} />}
+                    <button className="np-vol-btn np-icon-btn" onClick={() => setShowVol(v => !v)} title="Volume">
+                      {volume === 0 ? <VolumeX size={18} /> : volume < 0.5 ? <Volume1 size={18} /> : <Volume2 size={18} />}
                     </button>
                   </div>
                   <button
                     type="button"
-                    className="np-like"
-                    style={{ background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.35)' }}
+                    className="np-like np-icon-btn"
+                    title={liked[activeItem.videoId] ? 'Unlike' : 'Like'}
+                    style={{ color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.5)' }}
                     onClick={e => toggleLike(e, activeItem.videoId, activeItem)}
                   >
-                    <Heart size={20} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
+                    <Heart size={18} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
                   </button>
                   <button
                     type="button"
+                    className={`np-icon-btn${showLyrics ? ' active' : ''}`}
                     title={showLyrics ? 'Show Album Art' : 'Show Live Lyrics'}
-                    style={{ background: showLyrics ? 'rgba(242,202,80,0.16)' : 'none', border: showLyrics ? '1px solid rgba(242,202,80,0.35)' : '1px solid transparent', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: showLyrics ? '#f2ca50' : 'rgba(255,255,255,0.45)', transition: 'all 0.2s' }}
                     onClick={() => setShowLyrics(v => !v)}
                   >
                     <Mic2 size={17} />
@@ -1068,11 +1100,11 @@ function AppInner() {
                   <button
                     ref={npMenuBtnRef}
                     type="button"
+                    className={`np-icon-btn${npMenuOpen ? ' active' : ''}`}
                     title="Add to Playlist / Download"
-                    style={{ background: 'none', border: 'none', padding: 4, display: 'flex', alignItems: 'center', cursor: 'pointer', color: npMenuOpen ? '#f2ca50' : 'rgba(255,255,255,0.45)', transition: 'color 0.15s' }}
                     onClick={e => { e.stopPropagation(); setNpMenuOpen(v => !v) }}
                   >
-                    <ListPlus size={20} />
+                    <ListPlus size={18} />
                   </button>
                   {npMenuOpen && (
                     <TrackMenu
@@ -1122,7 +1154,7 @@ function AppInner() {
                   ) : (
                     <div className="np-lyrics-empty">
                       <Mic2 size={28} style={{ color: '#52525b' }} />
-                      <span>Lyrics not available for this track</span>
+                      <span>{lyricsData.disabled ? 'Lyrics not available for mashups & long mixes' : 'Lyrics not available for this track'}</span>
                     </div>
                   )}
                 </div>

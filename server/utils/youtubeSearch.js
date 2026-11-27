@@ -11,18 +11,25 @@ const getApiKeys = () => {
   return multi;
 };
 
-const NON_MUSIC_RE = /(#shorts|\bshorts\b|\broast\b|\bvlog\b|\bpodcast\b|\binterview\b|\breaction\b|\bgameplay\b|\bwalkthrough\b|\btrailer\b|\bteaser\b|\bfull movie\b|\bepisode\b|\bunboxing\b|\breview\b|\bwhatsapp status\b|\bstatus video\b)/i;
+const NON_MUSIC_RE = /(#shorts|\bshorts\b|\byoutube shorts\b|\broast\b|\bvlog\b|\bpodcast\b|\binterview\b|\breaction\b|\bgameplay\b|\bwalkthrough\b|\btrailer\b|\bteaser\b|\bfull movie\b|\bepisode\b|\bunboxing\b|\breview\b|\bwhatsapp status\b|\bstatus video\b)/i;
 const HAS_MUSIC_WORD_RE = /\b(song|songs|music|audio|lyrics|lyrical|lofi|remix|rap|track|album|ost|qawwali|ghazal|bhajan|mashup|jukebox|cover)\b/i;
+
+const parseIsoDuration = (iso = '') => {
+  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!m) return 0;
+  return (parseInt(m[1] || 0, 10) * 3600) + (parseInt(m[2] || 0, 10) * 60) + parseInt(m[3] || 0, 10);
+};
 
 const isMusicCandidate = (title = '', seconds = 0) => {
   if (NON_MUSIC_RE.test(title)) return false;
-  // Filter out YouTube Shorts (< 60s) without capping legitimate long songs
+  // Filter out all YouTube Shorts (< 60s) without capping legitimate long songs
   if (seconds > 0 && seconds < 60) return false;
   return true;
 };
 
 /**
- * Search YouTube Music using Data API v3 (category 10) with zero-quota yt-search fallback.
+ * Search YouTube Music using Data API v3 (category 10 + contentDetails Shorts filter)
+ * with zero-quota yt-search fallback.
  */
 const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } = {}) => {
   const keys = getApiKeys();
@@ -43,8 +50,25 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
         timeout: 8000,
       });
 
-      const filtered = res.data.items
-        .filter((item) => isMusicCandidate(item.snippet?.title))
+      const rawItems = res.data.items || [];
+      const ids = rawItems.map((i) => i.id?.videoId).filter(Boolean);
+
+      // Fetch exact durations (1 quota unit total) to strip all <60s Shorts
+      const durations = {};
+      if (ids.length > 0) {
+        try {
+          const vRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+            params: { part: 'contentDetails', id: ids.join(','), key },
+            timeout: 8000,
+          });
+          for (const v of vRes.data.items || []) {
+            durations[v.id] = parseIsoDuration(v.contentDetails?.duration || '');
+          }
+        } catch {}
+      }
+
+      const filtered = rawItems
+        .filter((item) => isMusicCandidate(item.snippet?.title, durations[item.id?.videoId] || 0))
         .slice(0, maxResults)
         .map((item) => ({
           videoId: item.id.videoId,

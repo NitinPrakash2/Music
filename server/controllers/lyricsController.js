@@ -1,20 +1,18 @@
 const axios = require('axios');
 const { sql } = require('../db');
 
+const MASHUP_OR_MIX_RE = /\b(mashup|jukebox|nonstop|non-stop|medley|megamix|mega\s*mix|all\s*songs|best\s*of|compilation|back\s*to\s*back|lofi\s*mix|dj\s*mix|1\s*hour|2\s*hour|3\s*hour|audio\s*jukebox|full\s*album)\b/i;
+
 const cleanTitle = (raw = '') => {
-  // Decode common HTML entities
   let s = raw
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .split('|')[0];
 
-  // Remove bracketed tags like (Official Video), [4K], (From "Stree 2"), etc.
   s = s.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ');
-  // Remove common YouTube noise phrases
   s = s.replace(/\b(full\s*(video\s*)?song|official\s*(music\s*)?(video|audio)|lyrical\s*video|lyrics\s*video|video\s*song|audio\s*song|4k|8k|hd|slowed\s*\+?\s*reverb|lofi)\b/gi, ' ');
   s = s.replace(/\s+/g, ' ').trim();
-  // If "Artist - Song", keep clean spacing
   return s.replace(/^[\-\s]+|[\-\s]+$/g, '').trim();
 };
 
@@ -35,6 +33,46 @@ const parseLrc = (lrc = '') => {
   return lines.sort((a, b) => a.time - b.time);
 };
 
+const isMostlyLatin = (text = '') => {
+  const latin = (text.match(/[a-zA-Z]/g) || []).length;
+  const nonLatin = (text.match(/[^\x00-\x7F]/g) || []).length;
+  return latin >= nonLatin;
+};
+
+const normalizeWords = (s = '') =>
+  s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 1);
+
+const scoreHit = (hit, cleanQ, targetDuration) => {
+  let score = 0;
+  if (hit.syncedLyrics) score += 50;
+  else if (hit.plainLyrics) score += 10;
+  else return -100;
+
+  const textSample = hit.syncedLyrics || hit.plainLyrics || '';
+  // Prefer Roman/Latin script when song title is in English/Hinglish
+  if (isMostlyLatin(cleanQ)) {
+    if (isMostlyLatin(textSample)) score += 40;
+    else score -= 25;
+  }
+
+  // Title word overlap
+  const qWords = normalizeWords(cleanQ);
+  const tWords = new Set(normalizeWords(hit.trackName || ''));
+  let overlap = 0;
+  for (const w of qWords) if (tWords.has(w)) overlap++;
+  score += overlap * 15;
+
+  // Duration closeness bonus if known
+  if (targetDuration > 0 && hit.duration > 0) {
+    const diff = Math.abs(hit.duration - targetDuration);
+    if (diff <= 5) score += 25;
+    else if (diff <= 15) score += 10;
+    else if (diff > 60) score -= 20;
+  }
+
+  return score;
+};
+
 const searchLrcLib = async (q) => {
   if (!q) return [];
   const res = await axios.get('https://lrclib.net/api/search', {
@@ -46,12 +84,20 @@ const searchLrcLib = async (q) => {
 };
 
 const getLyrics = async (req, res) => {
-  const { videoId, title, channel } = req.query;
+  const { videoId, title, channel, duration } = req.query;
   if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
 
+  const durNum = Number(duration) || 0;
+  // Do not fetch/show lyrics for mashups, jukeboxes, or long mixes (> 8 minutes)
+  if (MASHUP_OR_MIX_RE.test(title) || durNum > 480) {
+    return res.json({ synced: [], plain: '', disabled: true });
+  }
+
+  const cacheKey = videoId ? `v2:${videoId}` : null;
+
   try {
-    if (videoId) {
-      const cached = await sql`SELECT data FROM lyrics_cache WHERE video_id = ${videoId} LIMIT 1`;
+    if (cacheKey) {
+      const cached = await sql`SELECT data FROM lyrics_cache WHERE video_id = ${cacheKey} LIMIT 1`;
       if (cached.length > 0) {
         return res.json(cached[0].data);
       }
@@ -65,20 +111,28 @@ const getLyrics = async (req, res) => {
       channel ? `${parts[0]} ${channel.replace(/\s*-\s*Topic$/i, '')}`.trim() : null,
     ].filter(Boolean);
 
-    let bestMatch = null;
+    let allHits = [];
     for (const q of candidatesQueries) {
       const hits = await searchLrcLib(q);
-      const syncedHit = hits.find((h) => h.syncedLyrics);
-      if (syncedHit) {
-        bestMatch = syncedHit;
+      allHits = allHits.concat(hits);
+      // If we already found a strong Latin synced match, stop early
+      const strong = hits.find((h) => h.syncedLyrics && (!isMostlyLatin(cleaned) || isMostlyLatin(h.syncedLyrics)));
+      if (strong && normalizeWords(cleaned).some((w) => normalizeWords(strong.trackName).includes(w))) {
         break;
-      }
-      if (!bestMatch && hits.length > 0) {
-        bestMatch = hits.find((h) => h.plainLyrics) || hits[0];
       }
     }
 
-    const payload = bestMatch
+    let bestMatch = null;
+    let bestScore = -Infinity;
+    for (const hit of allHits) {
+      const s = scoreHit(hit, cleaned, durNum);
+      if (s > bestScore) {
+        bestScore = s;
+        bestMatch = hit;
+      }
+    }
+
+    const payload = bestMatch && bestScore > 0
       ? {
           synced: bestMatch.syncedLyrics ? parseLrc(bestMatch.syncedLyrics) : [],
           plain: bestMatch.plainLyrics || '',
@@ -87,10 +141,10 @@ const getLyrics = async (req, res) => {
         }
       : { synced: [], plain: '', trackName: cleaned, artistName: channel || '' };
 
-    if (videoId) {
+    if (cacheKey) {
       await sql`
         INSERT INTO lyrics_cache (video_id, data)
-        VALUES (${videoId}, ${JSON.stringify(payload)}::jsonb)
+        VALUES (${cacheKey}, ${JSON.stringify(payload)}::jsonb)
         ON CONFLICT (video_id)
         DO UPDATE SET data = EXCLUDED.data, created_at = NOW()
       `;
