@@ -102,7 +102,17 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   useEffect(() => {
     fetchPlaylists();
     const interval = setInterval(fetchPlaylists, 1800000);
-    return () => clearInterval(interval);
+    const onOnline = () => {
+      setError(prev => {
+        if (prev) fetchPlaylists();
+        return prev;
+      });
+    };
+    window.addEventListener('online', onOnline);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', onOnline);
+    };
   }, []);
 
   useEffect(() => {
@@ -159,6 +169,7 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   const fetchPlaylists = async () => {
     try {
       setSyncing(true);
+      setError('');
       const res = await fetch(`${API}/api/playlists/all`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load playlists');
@@ -183,7 +194,7 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   ];
 
   if (loading) return <div className="home-loading"><Loader2 size={32} className="spin" /><p>Loading playlists...</p></div>;
-  if (error) return <div className="home-error"><AlertCircle size={32} /><p>{error}</p><button onClick={fetchPlaylists}>Retry</button></div>;
+  if (error) return <div className="home-error"><AlertCircle size={32} /><p>{error}</p><button onClick={() => { setLoading(true); setError(''); fetchPlaylists(); }}>Retry</button></div>;
 
   const currentSlide = heroSlides[heroIdx];
   const isSlideActive = currentSlide && activeItem?.videoId === currentSlide.videoId;

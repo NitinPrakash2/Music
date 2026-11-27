@@ -109,7 +109,7 @@ const proxyStream = async (req, res, entry) => {
   const upstream = await axios.get(entry.streamUrl, {
     responseType: 'stream',
     headers,
-    timeout: 20000,
+    timeout: 0,
     validateStatus: (status) => status >= 200 && status < 400,
   });
 

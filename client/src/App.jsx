@@ -104,6 +104,7 @@ function AppInner() {
   const pendingResumeTimeRef = useRef(0)
   const lastSavedTimeRef = useRef(0)
   const playedHistoryRef = useRef(new Set())
+  const streamRetryRef = useRef({ videoId: null, count: 0 })
 
   const savePlaybackState = (item, time, dur, q) => {
     if (!item?.videoId) return
@@ -393,6 +394,7 @@ function AppInner() {
 
   const play = async (item) => {
     if (item?.videoId) playedHistoryRef.current.add(item.videoId)
+    streamRetryRef.current = { videoId: item?.videoId || null, count: 0 }
     pendingResumeTimeRef.current = 0
     setStreamError('')
     setActiveItem(item)
@@ -461,11 +463,46 @@ function AppInner() {
     }
   }
 
-  const togglePlay = () => {
+  const recoverStream = async (cur, resumeAt = 0) => {
+    const audio = audioRef.current
+    if (!cur?.videoId || !audio) return false
+    try {
+      setStreamError('')
+      setBuffering(true)
+      pendingResumeTimeRef.current = resumeAt
+      const freshUrl = await resolveStreamUrl(cur.videoId, API)
+      audio.src = freshUrl
+      audio.preload = 'auto'
+      audio.load()
+      await audio.play()
+      setIsPlaying(true)
+      setBuffering(false)
+      return true
+    } catch {
+      setBuffering(false)
+      setIsPlaying(false)
+      return false
+    }
+  }
+
+  const togglePlay = async () => {
     const audio = audioRef.current
     if (!audio) return
-    if (audio.paused) { audio.play(); setIsPlaying(true) }
-    else { audio.pause(); setIsPlaying(false) }
+    if (audio.error || (audio.readyState === 0 && activeItemRef.current)) {
+      await recoverStream(activeItemRef.current, audio.currentTime || 0)
+      return
+    }
+    if (audio.paused) {
+      try {
+        await audio.play()
+        setIsPlaying(true)
+      } catch {
+        if (activeItemRef.current) await recoverStream(activeItemRef.current, audio.currentTime || 0)
+      }
+    } else {
+      audio.pause()
+      setIsPlaying(false)
+    }
   }
 
   const toggleLike = async (e, videoId, item) => {
@@ -829,9 +866,20 @@ function AppInner() {
         onWaiting={() => setBuffering(true)}
         onCanPlay={() => setBuffering(false)}
         onPlaying={() => setBuffering(false)}
-        onError={e => {
+        onError={async e => {
+          const cur = activeItemRef.current
+          const resumeAt = audioRef.current?.currentTime || 0
+          if (cur?.videoId) {
+            const tracker = streamRetryRef.current
+            const nextCount = tracker.videoId === cur.videoId ? tracker.count + 1 : 1
+            if (nextCount <= 2) {
+              streamRetryRef.current = { videoId: cur.videoId, count: nextCount }
+              const ok = await recoverStream(cur, resumeAt)
+              if (ok) return
+            }
+          }
           const m = { 1: 'Aborted', 2: 'Network error', 3: 'Decode error', 4: 'Unsupported format' }
-          setStreamError(m[e.target.error?.code] || 'Stream error')
+          setStreamError(m[e.target.error?.code] || 'Stream error — tap Play to retry')
           setIsPlaying(false)
           setBuffering(false)
         }}
