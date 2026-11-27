@@ -27,12 +27,12 @@ const isMusicCandidate = (title = '', seconds = 0) => {
   return true;
 };
 
-// Prefer Studio / Official Audio / Topic tracks so lyrics timestamps align cleanly
+// Strongly prefer Studio / Official Audio / Topic tracks so duration & timestamps match Spotify/LRCLIB
 const audioPriorityScore = (title = '', channel = '') => {
   let s = 0;
-  if (/\s*-\s*Topic$/i.test(channel)) s += 3;
-  if (/\b(official\s*audio|audio\s*only)\b/i.test(title)) s += 2;
-  if (/\b(lyrical|lyrics\s*video)\b/i.test(title)) s -= 1;
+  if (/\s*-\s*Topic$/i.test(channel)) s += 5;
+  if (/\b(official\s*audio|audio\s*only|provided\s*to\s*youtube)\b/i.test(title)) s += 4;
+  if (/\b(lyrical|lyric\s*video|lyrics\s*video|official\s*music\s*video|video\s*song|4k|8k)\b/i.test(title)) s -= 2;
   return s;
 };
 

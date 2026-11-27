@@ -1,7 +1,5 @@
 const axios = require('axios');
 const { sql } = require('../db');
-const { resolveAudioUrl } = require('./streamController');
-const { alignLyricsWithAI } = require('../utils/aiLyricsSync');
 
 const MASHUP_OR_MIX_RE = /\b(mashup|jukebox|nonstop|non-stop|medley|megamix|mega\s*mix|all\s*songs|best\s*of|compilation|back\s*to\s*back|lofi\s*mix|dj\s*mix|1\s*hour|2\s*hour|3\s*hour|audio\s*jukebox|full\s*album)\b/i;
 
@@ -89,14 +87,20 @@ const scoreHit = (hit, cleanQ, rawTitle, channel, targetDuration) => {
   score += (overlap / Math.max(1, qWords.length)) * 60;
   score -= Math.max(0, tWords.size - overlap) * 6;
 
-  // Artist / channel / rawTitle credit match bonus
+  // Artist / album / channel / rawTitle credit match bonus & mismatch penalty
   const contextText = `${rawTitle} ${channel}`.toLowerCase();
-  const artistWords = normalizeWords(hit.artistName || '');
-  for (const aw of artistWords) {
-    if (aw.length >= 4 && contextText.includes(aw)) {
-      score += 12;
-      break;
-    }
+  const artistWords = normalizeWords(hit.artistName || '').filter((w) => w.length >= 3);
+  const artistHits = artistWords.filter((aw) => contextText.includes(aw)).length;
+  if (artistHits > 0) {
+    score += Math.min(2, artistHits) * 35;
+  } else if (rawTitle.includes('|') && artistWords.length > 0) {
+    // Title explicitly lists artist/movie credits, and this hit's artist doesn't match any of them
+    score -= 90;
+  }
+
+  const albumWords = normalizeWords(hit.albumName || '').filter((w) => w.length >= 4);
+  if (albumWords.some((alw) => contextText.includes(alw))) {
+    score += 25;
   }
 
   const textSample = hit.syncedLyrics || hit.plainLyrics || '';
@@ -129,6 +133,35 @@ const searchLrcLib = async (q) => {
   return Array.isArray(res.data) ? res.data : [];
 };
 
+const searchKuGouLrc = async (query, targetDuration = 0) => {
+  try {
+    const sr = await axios.get('https://mobileservice.kugou.com/api/v3/search/song', {
+      params: { format: 'json', keyword: query, page: 1, pagesize: 3 },
+      timeout: 5000,
+    });
+    const songs = sr.data?.data?.info || [];
+    const pick = targetDuration > 0
+      ? songs.find((s) => Math.abs((s.duration || 0) - targetDuration) <= 10) || songs[0]
+      : songs[0];
+    if (!pick?.hash) return '';
+
+    const cr = await axios.get('https://lyrics.kugou.com/search', {
+      params: { ver: 1, man: 'yes', client: 'pc', keyword: pick.songname || query, duration: (pick.duration || 0) * 1000, hash: pick.hash },
+      timeout: 5000,
+    });
+    const cand = cr.data?.candidates?.[0];
+    if (!cand?.id || !cand?.accesskey) return '';
+
+    const dl = await axios.get('https://lyrics.kugou.com/download', {
+      params: { ver: 1, client: 'pc', id: cand.id, accesskey: cand.accesskey, fmt: 'lrc', charset: 'utf8' },
+      timeout: 5000,
+    });
+    return dl.data?.content ? Buffer.from(dl.data.content, 'base64').toString('utf8') : '';
+  } catch {
+    return '';
+  }
+};
+
 const getLyrics = async (req, res) => {
   const { videoId, title, channel, duration } = req.query;
   if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
@@ -139,11 +172,14 @@ const getLyrics = async (req, res) => {
     return res.json({ synced: [], plain: '', disabled: true });
   }
 
-  const cacheKey = videoId ? `v6:${videoId}:${durNum > 0 ? Math.round(durNum / 5) * 5 : 0}` : null;
+  res.set('Cache-Control', 'no-store');
+  const cacheKey = videoId ? `v20:${videoId}:${durNum > 0 ? Math.round(durNum / 5) * 5 : 0}` : null;
 
   try {
     if (cacheKey) {
-      const cached = await sql`SELECT data FROM lyrics_cache WHERE video_id = ${cacheKey} LIMIT 1`;
+      const cached = durNum > 0
+        ? await sql`SELECT data FROM lyrics_cache WHERE video_id = ${cacheKey} LIMIT 1`
+        : await sql`SELECT data FROM lyrics_cache WHERE video_id LIKE ${`v20:${videoId}:%`} ORDER BY created_at DESC LIMIT 1`;
       if (cached.length > 0) {
         return res.json(cached[0].data);
       }
@@ -151,7 +187,13 @@ const getLyrics = async (req, res) => {
 
     const cleaned = cleanTitle(title);
     const parts = cleaned.split(/\s+-\s+/).filter((p) => normalizeWords(p).length > 0);
+    const pipeCredits = title.split('|').slice(1).map((s) => s.split(',')[0].trim()).filter((s) => normalizeWords(s).length > 0);
+    const firstCredit = pipeCredits[0] || '';
+    const lastCredit = pipeCredits.length > 1 ? pipeCredits[pipeCredits.length - 1] : '';
+
     const candidatesQueries = [
+      firstCredit ? `${cleaned} ${firstCredit}`.trim() : null,
+      lastCredit ? `${cleaned} ${lastCredit}`.trim() : null,
       cleaned,
       parts.length > 1 ? parts[1] : null,
       parts.length > 1 ? parts[0] : null,
@@ -161,8 +203,8 @@ const getLyrics = async (req, res) => {
     for (const q of [...new Set(candidatesQueries)]) {
       const hits = await searchLrcLib(q);
       allHits = allHits.concat(hits);
-      // If we already found a strong Latin synced match for the title, stop early
-      const strong = hits.find((h) => scoreHit(h, cleaned, title, channel, durNum) >= 100);
+      // Only stop early if we found a strong match that also matches artist/album credits
+      const strong = hits.find((h) => scoreHit(h, cleaned, title, channel, durNum) >= 155);
       if (strong) break;
     }
 
@@ -177,31 +219,25 @@ const getLyrics = async (req, res) => {
     }
 
     let syncedLines = bestMatch && bestScore > 0 && bestMatch.syncedLyrics ? parseLrc(bestMatch.syncedLyrics) : [];
-    let aiSynced = false;
 
-    // Optional AI Audio-to-Lyrics alignment (Groq Whisper primary, Gemini fallback)
-    if ((process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY) && videoId && syncedLines.length > 0 && (durNum === 0 || Math.abs((bestMatch?.duration || 0) - durNum) > 3)) {
-      try {
-        const audioInfo = await resolveAudioUrl(`https://www.youtube.com/watch?v=${videoId}`);
-        const aligned = await alignLyricsWithAI({ lines: syncedLines, audioStreamUrl: audioInfo?.url });
-        if (aligned?.lines?.length) {
-          syncedLines = aligned.lines;
-          aiSynced = true;
-        }
-      } catch (e) {
-        console.warn('[LYRICS AI SYNC]', e.message);
+    // Fallback to KuGou human-synced LRC if LRCLIB only had plain lyrics
+    if (syncedLines.length === 0 && cleaned) {
+      const kugouQuery = firstCredit ? `${cleaned} ${firstCredit}`.trim() : cleaned;
+      const kugouLrc = await searchKuGouLrc(kugouQuery, durNum);
+      if (kugouLrc) {
+        const parsedKg = parseLrc(kugouLrc);
+        if (parsedKg.length >= 4) syncedLines = parsedKg;
       }
     }
 
-    const payload = bestMatch && bestScore > 0
+    const payload = (bestMatch && bestScore > 0) || syncedLines.length > 0
       ? {
           synced: syncedLines,
-          plain: bestMatch.plainLyrics || '',
-          trackName: bestMatch.trackName || cleaned,
-          artistName: bestMatch.artistName || channel || '',
-          aiSynced,
+          plain: bestMatch?.plainLyrics || '',
+          trackName: bestMatch?.trackName || cleaned,
+          artistName: bestMatch?.artistName || channel || '',
         }
-      : { synced: [], plain: '', trackName: cleaned, artistName: channel || '', aiSynced: false };
+      : { synced: [], plain: '', trackName: cleaned, artistName: channel || '' };
 
     if (cacheKey) {
       await sql`

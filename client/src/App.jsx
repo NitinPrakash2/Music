@@ -140,7 +140,8 @@ function AppInner() {
   useEffect(() => {
     const vid = activeItem?.videoId
     const title = activeItem?.title
-    const dur = Math.round(activeItem?.duration || duration || audioRef.current?.duration || 0)
+    const audioDur = Number.isFinite(audioRef.current?.duration) ? Math.round(audioRef.current.duration) : 0
+    const dur = Math.round(activeItem?.duration || audioDur || 0)
     if (!vid || !title) {
       lyricsAttemptRef.current = { videoId: null, ok: false, tries: 0, durSent: 0 }
       setLyricsData({ synced: [], plain: '', disabled: false })
@@ -148,18 +149,21 @@ function AppInner() {
     }
     const isNewTrack = lyricsAttemptRef.current.videoId !== vid
     if (!isNewTrack && lyricsAttemptRef.current.ok && (lyricsAttemptRef.current.durSent > 0 || dur === 0)) return
+    if (!isNewTrack && lyricsAttemptRef.current.inFlight) return
 
     let cancelled = false
     let retryTimer = null
     if (isNewTrack) {
-      lyricsAttemptRef.current = { videoId: vid, ok: false, tries: 0, durSent: 0 }
+      lyricsAttemptRef.current = { videoId: vid, ok: false, tries: 0, durSent: 0, inFlight: false }
       setLyricsData({ synced: [], plain: '', disabled: false })
     }
 
     const fetchLyrics = () => {
       if (cancelled) return
+      lyricsAttemptRef.current.inFlight = true
       setLyricsLoading(true)
-      const currentDur = Math.round(activeItem?.duration || duration || audioRef.current?.duration || 0)
+      const curAudioDur = Number.isFinite(audioRef.current?.duration) ? Math.round(audioRef.current.duration) : 0
+      const currentDur = Math.round(activeItem?.duration || curAudioDur || 0)
       fetch(`${API}/api/lyrics?videoId=${encodeURIComponent(vid)}&title=${encodeURIComponent(title)}&channel=${encodeURIComponent(activeItem.channel || '')}${currentDur > 0 ? `&duration=${currentDur}` : ''}`)
         .then(r => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -167,18 +171,19 @@ function AppInner() {
         })
         .then(d => {
           if (cancelled) return
-          lyricsAttemptRef.current = { videoId: vid, ok: true, tries: 0, durSent: currentDur }
+          lyricsAttemptRef.current = { videoId: vid, ok: true, tries: 0, durSent: currentDur, inFlight: false }
           setLyricsData({ synced: d.synced || [], plain: d.plain || '', disabled: Boolean(d.disabled) })
         })
         .catch(() => {
           if (cancelled) return
           const nextTries = (lyricsAttemptRef.current.tries || 0) + 1
-          lyricsAttemptRef.current = { videoId: vid, ok: false, tries: nextTries, durSent: 0 }
+          lyricsAttemptRef.current = { videoId: vid, ok: false, tries: nextTries, durSent: 0, inFlight: false }
           if (nextTries <= 2) {
             retryTimer = setTimeout(fetchLyrics, 2500)
           }
         })
         .finally(() => {
+          lyricsAttemptRef.current.inFlight = false
           if (!cancelled) setLyricsLoading(false)
         })
     }
@@ -186,9 +191,10 @@ function AppInner() {
     fetchLyrics()
     return () => {
       cancelled = true
+      lyricsAttemptRef.current.inFlight = false
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [activeItem?.videoId, showLyrics, showCard, Math.round(duration || 0)])
+  }, [activeItem?.videoId, showLyrics, showCard, duration])
 
   // High-precision 50ms clock while lyrics are visible for real-time Spotify-like sync
   useEffect(() => {
@@ -206,15 +212,15 @@ function AppInner() {
     const lines = lyricsData.synced
     if (!lines.length) return []
     const out = []
-    if (!lines[0].isBreak && lines[0].time >= 2) {
+    if (!lines[0].isBreak && lines[0].time >= 4) {
       out.push({ time: 0, text: '•••', isBreak: true, key: 'intro' })
     }
     for (let i = 0; i < lines.length; i++) {
       const cur = lines[i]
       out.push({ ...cur, key: `${cur.time}-${i}` })
       const next = lines[i + 1]
-      if (next && !cur.isBreak && !next.isBreak && next.time - cur.time >= 7) {
-        out.push({ time: cur.time + 4.5, text: '•••', isBreak: true, key: `gap-${i}` })
+      if (next && !cur.isBreak && !next.isBreak && next.time - cur.time >= 20) {
+        out.push({ time: cur.time + 10, text: '•••', isBreak: true, key: `gap-${i}` })
       }
     }
     return out

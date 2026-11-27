@@ -6,7 +6,7 @@ const searchController = async (req, res) => {
   if (!raw?.trim()) return res.status(400).json({ error: 'Query parameter "q" is required' });
 
   const query = raw.trim().toLowerCase();
-  const cacheKey = `music_v3:${query}`;
+  const cacheKey = `music_v4:${query}`;
 
   try {
     // Check cache

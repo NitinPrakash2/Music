@@ -248,4 +248,4 @@ const downloadController = (req, res) => {
   });
 };
 
-module.exports = { streamController, downloadController, resolveAudioUrl };
+module.exports = { streamController, downloadController };
