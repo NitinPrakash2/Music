@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import {
   Search as SearchIcon, X, History, LogOut, UserCog,
   SkipBack, SkipForward, Play, Pause, Loader2,
@@ -177,12 +177,41 @@ function AppInner() {
     }
   }, [activeItem?.videoId, showLyrics, showCard])
 
-  const activeLyricIdx = (() => {
+  // High-precision 50ms clock while lyrics are visible for real-time Spotify-like sync
+  useEffect(() => {
+    if (!isPlaying || !showLyrics || !showCard || !lyricsData.synced.length) return
+    const id = setInterval(() => {
+      if (audioRef.current && !audioRef.current.paused) {
+        setRawTime(audioRef.current.currentTime || 0)
+      }
+    }, 50)
+    return () => clearInterval(id)
+  }, [isPlaying, showLyrics, showCard, lyricsData.synced.length])
+
+  // Build display lyrics with Spotify-style '...' instrumental breaks (intro + long gaps)
+  const displayLyrics = useMemo(() => {
     const lines = lyricsData.synced
-    if (!lines.length) return -1
-    let idx = -1
+    if (!lines.length) return []
+    const out = []
+    if (!lines[0].isBreak && lines[0].time >= 2) {
+      out.push({ time: 0, text: '•••', isBreak: true, key: 'intro' })
+    }
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].time <= rawTime + 0.25) idx = i
+      const cur = lines[i]
+      out.push({ ...cur, key: `${cur.time}-${i}` })
+      const next = lines[i + 1]
+      if (next && !cur.isBreak && !next.isBreak && next.time - cur.time >= 7) {
+        out.push({ time: cur.time + 4.5, text: '•••', isBreak: true, key: `gap-${i}` })
+      }
+    }
+    return out
+  }, [lyricsData.synced])
+
+  const activeLyricIdx = (() => {
+    if (!displayLyrics.length) return -1
+    let idx = -1
+    for (let i = 0; i < displayLyrics.length; i++) {
+      if (displayLyrics[i].time <= rawTime + 0.08) idx = i
       else break
     }
     return idx
@@ -1125,16 +1154,16 @@ function AppInner() {
                       <Loader2 size={26} className="spin" style={{ color: '#f2ca50' }} />
                       <span>Finding synced lyrics...</span>
                     </div>
-                  ) : lyricsData.synced.length > 0 ? (
+                  ) : displayLyrics.length > 0 ? (
                     <div className="np-lyrics-scroll">
-                      {lyricsData.synced.map((line, i) => {
+                      {displayLyrics.map((line, i) => {
                         const isCur = i === activeLyricIdx
                         const isPast = i < activeLyricIdx
                         return (
-                          <p
-                            key={`${line.time}-${i}`}
+                          <div
+                            key={line.key}
                             ref={isCur ? activeLyricRef : null}
-                            className={`np-lyric-line${isCur ? ' active' : ''}${isPast ? ' past' : ''}`}
+                            className={`np-lyric-line${line.isBreak ? ' is-break' : ''}${isCur ? ' active' : ''}${isPast ? ' past' : ''}`}
                             onClick={() => {
                               if (audioRef.current) {
                                 audioRef.current.currentTime = line.time
@@ -1142,8 +1171,12 @@ function AppInner() {
                               }
                             }}
                           >
-                            {line.text}
-                          </p>
+                            {line.isBreak ? (
+                              <span className="np-lyric-dots" aria-label="Instrumental">
+                                <span /><span /><span />
+                              </span>
+                            ) : line.text}
+                          </div>
                         )
                       })}
                     </div>

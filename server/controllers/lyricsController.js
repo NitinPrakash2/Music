@@ -24,8 +24,10 @@ const cleanTitle = (raw = '') => {
   return s.replace(/^[\-\s]+|[\-\s]+$/g, '').trim();
 };
 
+const BREAK_LINE_RE = /^(\.{2,}|…+|♪+|♫+|\(?\s*(instrumental|music|interlude|intro|outro)\s*\)?)$/i;
+
 const parseLrc = (lrc = '') => {
-  const lines = [];
+  const rawLines = [];
   const regex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)/;
   for (const rawLine of lrc.split(/\r?\n/)) {
     const m = rawLine.match(regex);
@@ -36,9 +38,19 @@ const parseLrc = (lrc = '') => {
     const ms = parseInt(msStr, 10);
     const time = min * 60 + sec + ms / 1000;
     const text = m[4].trim();
-    if (text) lines.push({ time, text });
+    const isBreak = !text || BREAK_LINE_RE.test(text);
+    rawLines.push({ time, text: isBreak ? '•••' : text, isBreak });
   }
-  return lines.sort((a, b) => a.time - b.time);
+  rawLines.sort((a, b) => a.time - b.time);
+
+  // Deduplicate consecutive breaks and drop trailing breaks
+  const lines = [];
+  for (const line of rawLines) {
+    if (line.isBreak && (lines.length === 0 || lines[lines.length - 1].isBreak)) continue;
+    lines.push(line);
+  }
+  while (lines.length > 0 && lines[lines.length - 1].isBreak) lines.pop();
+  return lines;
 };
 
 const isMostlyLatin = (text = '') => {
@@ -115,7 +127,7 @@ const getLyrics = async (req, res) => {
     return res.json({ synced: [], plain: '', disabled: true });
   }
 
-  const cacheKey = videoId ? `v3:${videoId}` : null;
+  const cacheKey = videoId ? `v4:${videoId}` : null;
 
   try {
     if (cacheKey) {
