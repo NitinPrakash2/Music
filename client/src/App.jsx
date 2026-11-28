@@ -3,7 +3,7 @@ import {
   Search as SearchIcon, X, History, LogOut, UserCog,
   SkipBack, SkipForward, Play, Pause, Loader2,
   Heart, ChevronUp, ChevronDown, VolumeX, Volume1, Volume2,
-  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw, ListPlus, Mic2
+  Shuffle, Repeat, Repeat1, Download, WifiOff, RefreshCw, ListPlus, Mic2, Moon, ChevronRight, Music
 } from 'lucide-react'
 import TrackMenu from './TrackMenu'
 import { resolveStreamUrl, triggerTrackDownload } from './nativeAudio'
@@ -84,9 +84,21 @@ function AppInner() {
   const [pullY, setPullY] = useState(0)
   const [pullRefreshing, setPullRefreshing] = useState(false)
   const [cardDragY, setCardDragY] = useState(0)
+  const [sleepMenuOpen, setSleepMenuOpen] = useState(false)
+  const [sleepTargetAt, setSleepTargetAt] = useState(null)
+  const [sleepRemainingSec, setSleepRemainingSec] = useState(0)
+  const [sleepEndOfTrack, setSleepEndOfTrack] = useState(false)
+  const [sleepFinishTrack, setSleepFinishTrack] = useState(false)
+  const [sleepHours, setSleepHours] = useState(0)
+  const [sleepMins, setSleepMins] = useState(15)
+  const [sleepPendingMin, setSleepPendingMin] = useState(null)
+  const sleepEndOfTrackRef = useRef(false)
+  const sleepFinishTrackRef = useRef(false)
   const contentRef = useRef(null)
   const pullStartYRef = useRef(null)
+  const pullYRef = useRef(0)
   const cardDragStartRef = useRef(null)
+  const cardDragYRef = useRef(0)
   const suppressSuggestionsRef = useRef(false)
   const accountWrapRef = useRef(null)
   const npMenuBtnRef = useRef(null)
@@ -255,6 +267,54 @@ function AppInner() {
   useEffect(() => { activeItemRef.current = activeItem }, [activeItem])
   useEffect(() => { repeatRef.current = repeat }, [repeat])
   useEffect(() => { shuffleRef.current = shuffle }, [shuffle])
+  useEffect(() => { sleepEndOfTrackRef.current = sleepEndOfTrack }, [sleepEndOfTrack])
+  useEffect(() => { sleepFinishTrackRef.current = sleepFinishTrack }, [sleepFinishTrack])
+
+  // Sleep Timer real-time countdown & automatic pause (immediate or after current track finishes)
+  useEffect(() => {
+    if (!sleepTargetAt) {
+      setSleepRemainingSec(0)
+      return
+    }
+    const tick = () => {
+      const rem = Math.max(0, Math.ceil((sleepTargetAt - Date.now()) / 1000))
+      setSleepRemainingSec(rem)
+      if (rem <= 0) {
+        setSleepTargetAt(null)
+        setSleepRemainingSec(0)
+        if (sleepFinishTrackRef.current && audioRef.current && !audioRef.current.paused) {
+          setSleepEndOfTrack(true)
+        } else {
+          if (audioRef.current && !audioRef.current.paused) {
+            audioRef.current.pause()
+          }
+          setIsPlaying(false)
+        }
+      }
+    }
+    tick()
+    const id = setInterval(tick, 500)
+    return () => clearInterval(id)
+  }, [sleepTargetAt])
+
+  const startSleepTimer = (minutes, finishCurrent = false) => {
+    setSleepFinishTrack(Boolean(finishCurrent))
+    if (minutes === 'end') {
+      setSleepTargetAt(null)
+      setSleepRemainingSec(0)
+      setSleepEndOfTrack(true)
+    } else if (minutes === 0) {
+      setSleepTargetAt(null)
+      setSleepRemainingSec(0)
+      setSleepEndOfTrack(false)
+    } else {
+      setSleepEndOfTrack(false)
+      setSleepTargetAt(Date.now() + minutes * 60 * 1000)
+      setSleepRemainingSec(minutes * 60)
+    }
+    setSleepPendingMin(null)
+    setSleepMenuOpen(false)
+  }
 
   useEffect(() => {
     const onHash = () => setRoute(window.location.hash.slice(1) || '/')
@@ -265,6 +325,7 @@ function AppInner() {
   // Native Android back button handler: close overlays/search first, then navigate back to Home
   useEffect(() => {
     window.__rxHandleBack = () => {
+      if (sleepMenuOpen) { setSleepMenuOpen(false); return true }
       if (npMenuOpen) { setNpMenuOpen(false); return true }
       if (showVol) { setShowVol(false); return true }
       if (showCard) { closeCard(); return true }
@@ -287,7 +348,7 @@ function AppInner() {
       return false
     }
     return () => { delete window.__rxHandleBack }
-  }, [npMenuOpen, showVol, showCard, drawerOpen, accountMenuOpen, searchOpen, searchFocused, showSuggestions, showRecentSearches])
+  }, [sleepMenuOpen, npMenuOpen, showVol, showCard, drawerOpen, accountMenuOpen, searchOpen, searchFocused, showSuggestions, showRecentSearches])
 
   useEffect(() => {
     if (user) {
@@ -1031,41 +1092,11 @@ function AppInner() {
         <div
           ref={contentRef}
           className="content"
-          onPointerDown={(e) => {
-            if ((contentRef.current?.scrollTop || 0) <= 2 && !pullRefreshing && e.button === 0) {
-              pullStartYRef.current = e.clientY
-            } else {
-              pullStartYRef.current = null
-            }
-          }}
-          onPointerMove={(e) => {
-            if (pullStartYRef.current === null || pullRefreshing) return
-            const dy = e.clientY - pullStartYRef.current
-            if (dy > 12 && (contentRef.current?.scrollTop || 0) <= 2) {
-              setPullY(Math.min(84, (dy - 12) * 0.55))
-            } else if (dy <= 0) {
-              setPullY(0)
-            }
-          }}
-          onPointerUp={() => {
-            if (pullStartYRef.current === null) return
-            pullStartYRef.current = null
-            if (pullY >= 50) {
-              setPullRefreshing(true)
-              setPullY(44)
-              setRefreshNonce(n => n + 1)
-              setTimeout(() => {
-                setPullRefreshing(false)
-                setPullY(0)
-              }, 700)
-            } else {
-              setPullY(0)
-            }
-          }}
-          onPointerCancel={() => { pullStartYRef.current = null; setPullY(0) }}
+          style={showCard ? { overflowY: 'hidden' } : undefined}
           onTouchStart={(e) => {
-            if ((contentRef.current?.scrollTop || 0) <= 2 && !pullRefreshing) {
+            if ((contentRef.current?.scrollTop || 0) <= 2 && !pullRefreshing && e.touches.length === 1) {
               pullStartYRef.current = e.touches[0].clientY
+              pullYRef.current = 0
             } else {
               pullStartYRef.current = null
             }
@@ -1073,16 +1104,21 @@ function AppInner() {
           onTouchMove={(e) => {
             if (pullStartYRef.current === null || pullRefreshing) return
             const dy = e.touches[0].clientY - pullStartYRef.current
-            if (dy > 8 && (contentRef.current?.scrollTop || 0) <= 2) {
-              setPullY(Math.min(84, (dy - 8) * 0.55))
+            if (dy > 6 && (contentRef.current?.scrollTop || 0) <= 2) {
+              const next = Math.min(84, (dy - 6) * 0.55)
+              pullYRef.current = next
+              setPullY(next)
             } else if (dy <= 0) {
+              pullYRef.current = 0
               setPullY(0)
             }
           }}
           onTouchEnd={() => {
             if (pullStartYRef.current === null) return
             pullStartYRef.current = null
-            if (pullY >= 50) {
+            const pulled = pullYRef.current
+            pullYRef.current = 0
+            if (pulled >= 45) {
               setPullRefreshing(true)
               setPullY(44)
               setRefreshNonce(n => n + 1)
@@ -1093,6 +1129,36 @@ function AppInner() {
             } else {
               setPullY(0)
             }
+          }}
+          onTouchCancel={() => { pullStartYRef.current = null; pullYRef.current = 0; setPullY(0) }}
+          onMouseDown={(e) => {
+            if (e.button !== 0 || (contentRef.current?.scrollTop || 0) > 2 || pullRefreshing) return
+            if (e.target.closest('button, a, input, .track-card')) return
+            const startY = e.clientY
+            const onMove = (ev) => {
+              const dy = ev.clientY - startY
+              if (dy > 12 && (contentRef.current?.scrollTop || 0) <= 2) {
+                const next = Math.min(84, (dy - 12) * 0.55)
+                pullYRef.current = next
+                setPullY(next)
+              }
+            }
+            const onUp = () => {
+              window.removeEventListener('mousemove', onMove)
+              window.removeEventListener('mouseup', onUp)
+              const pulled = pullYRef.current
+              pullYRef.current = 0
+              if (pulled >= 45) {
+                setPullRefreshing(true)
+                setPullY(44)
+                setRefreshNonce(n => n + 1)
+                setTimeout(() => { setPullRefreshing(false); setPullY(0) }, 700)
+              } else {
+                setPullY(0)
+              }
+            }
+            window.addEventListener('mousemove', onMove)
+            window.addEventListener('mouseup', onUp)
           }}
         >
           {(pullY > 6 || pullRefreshing) && (
@@ -1137,6 +1203,11 @@ function AppInner() {
         }}
         style={{ display: 'none' }}
         onEnded={() => {
+          if (sleepEndOfTrackRef.current) {
+            setSleepEndOfTrack(false)
+            setIsPlaying(false)
+            return
+          }
           const rep = repeatRef.current
           const q = queueRef.current
           const cur = activeItemRef.current
@@ -1225,49 +1296,54 @@ function AppInner() {
       </div>
 
 {showCard && activeItem && (
-        <div className={`np-overlay${cardClosing ? ' closing' : ''}`} onClick={() => { setCardDragY(0); closeCard() }}>
+        <div className={`np-overlay${cardClosing ? ' closing' : ''}`} onClick={() => { cardDragYRef.current = 0; setCardDragY(0); closeCard() }}>
           <div
             className={`np-card${cardClosing ? ' closing' : ''}`}
             style={cardDragY > 0 ? { transform: `translateY(${cardDragY}px)`, transition: 'none' } : undefined}
             onClick={e => e.stopPropagation()}
-            onPointerDown={(e) => {
-              if (e.target.closest('button, input, .np-seek, .np-vol-vert, .np-lyrics-scroll')) return
-              cardDragStartRef.current = e.clientY
-            }}
-            onPointerMove={(e) => {
-              if (cardDragStartRef.current === null) return
-              const dy = e.clientY - cardDragStartRef.current
-              if (dy > 0) setCardDragY(dy)
-            }}
-            onPointerUp={() => {
-              if (cardDragStartRef.current === null) return
-              cardDragStartRef.current = null
-              if (cardDragY > 85) {
-                setCardDragY(0)
-                closeCard()
-              } else {
-                setCardDragY(0)
-              }
-            }}
-            onPointerCancel={() => { cardDragStartRef.current = null; setCardDragY(0) }}
             onTouchStart={(e) => {
               if (e.target.closest('button, input, .np-seek, .np-vol-vert, .np-lyrics-scroll')) return
               cardDragStartRef.current = e.touches[0].clientY
+              cardDragYRef.current = 0
             }}
             onTouchMove={(e) => {
               if (cardDragStartRef.current === null) return
               const dy = e.touches[0].clientY - cardDragStartRef.current
-              if (dy > 0) setCardDragY(dy)
+              if (dy > 0) {
+                cardDragYRef.current = dy
+                setCardDragY(dy)
+              }
             }}
             onTouchEnd={() => {
               if (cardDragStartRef.current === null) return
               cardDragStartRef.current = null
-              if (cardDragY > 85) {
-                setCardDragY(0)
-                closeCard()
-              } else {
-                setCardDragY(0)
+              const dragged = cardDragYRef.current
+              cardDragYRef.current = 0
+              setCardDragY(0)
+              if (dragged > 70) closeCard()
+            }}
+            onTouchCancel={() => { cardDragStartRef.current = null; cardDragYRef.current = 0; setCardDragY(0) }}
+            onMouseDown={(e) => {
+              if (e.button !== 0 || e.target.closest('button, input, .np-seek, .np-vol-vert, .np-lyrics-scroll')) return
+              const startY = e.clientY
+              cardDragYRef.current = 0
+              const onMove = (ev) => {
+                const dy = ev.clientY - startY
+                if (dy > 0) {
+                  cardDragYRef.current = dy
+                  setCardDragY(dy)
+                }
               }
+              const onUp = () => {
+                window.removeEventListener('mousemove', onMove)
+                window.removeEventListener('mouseup', onUp)
+                const dragged = cardDragYRef.current
+                cardDragYRef.current = 0
+                setCardDragY(0)
+                if (dragged > 70) closeCard()
+              }
+              window.addEventListener('mousemove', onMove)
+              window.addEventListener('mouseup', onUp)
             }}
           >
             <div className="np-card-bg" style={{ backgroundImage: `url(${activeItem.thumbnail})` }} />
@@ -1277,10 +1353,23 @@ function AppInner() {
               <div className="np-drag-handle" />
 
               <div className="np-header">
-                <button className="np-close" onClick={closeCard}>
+                <button className="np-close" onClick={() => { setSleepMenuOpen(false); closeCard() }}>
                   <ChevronDown size={22} />
                 </button>
-                <span className="np-label">Now Playing</span>
+                <div className="np-label-wrap">
+                  <span className="np-label">Now Playing</span>
+                  {(sleepTargetAt || sleepEndOfTrack) && (
+                    <button
+                      type="button"
+                      className="np-sleep-badge"
+                      onClick={() => setSleepMenuOpen(v => !v)}
+                      title="Sleep Timer Active"
+                    >
+                      <Moon size={11} />
+                      <span>{sleepEndOfTrack ? 'End of track' : fmt(sleepRemainingSec)}</span>
+                    </button>
+                  )}
+                </div>
                 <div className="np-header-right">
                   <div className="np-vol-wrap">
                     {showVol && (
@@ -1316,6 +1405,14 @@ function AppInner() {
                     <Mic2 size={17} />
                   </button>
                   <button
+                    type="button"
+                    className={`np-icon-btn${(sleepTargetAt || sleepEndOfTrack || sleepMenuOpen) ? ' active' : ''}`}
+                    title="Sleep Timer"
+                    onClick={e => { e.stopPropagation(); setSleepPendingMin(null); setSleepMenuOpen(v => !v) }}
+                  >
+                    <Moon size={17} />
+                  </button>
+                  <button
                     ref={npMenuBtnRef}
                     type="button"
                     className={`np-icon-btn${npMenuOpen ? ' active' : ''}`}
@@ -1335,6 +1432,129 @@ function AppInner() {
                   )}
                 </div>
               </div>
+
+              {sleepMenuOpen && (
+                <div
+                  className="np-sleep-backdrop"
+                  onClick={() => { setSleepPendingMin(null); setSleepMenuOpen(false) }}
+                  onWheel={e => e.stopPropagation()}
+                  onTouchMove={e => e.stopPropagation()}
+                >
+                  <div className="np-sleep-sheet" onClick={e => e.stopPropagation()}>
+                    <div className="np-sleep-head">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Moon size={17} style={{ color: '#f2ca50' }} />
+                        <span>{sleepPendingMin ? 'When timer ends' : 'Sleep Timer'}</span>
+                      </div>
+                      {(sleepTargetAt || sleepEndOfTrack) && !sleepPendingMin && (
+                        <span className="np-sleep-live">
+                          {sleepEndOfTrack ? 'Ends after track' : `${fmt(sleepRemainingSec)} left`}
+                        </span>
+                      )}
+                    </div>
+
+                    {sleepPendingMin ? (
+                      <div className="np-sleep-options">
+                        <button
+                          type="button"
+                          className="np-sleep-opt np-sleep-choice"
+                          onClick={() => startSleepTimer(sleepPendingMin, false)}
+                        >
+                          <div className="np-sleep-choice-left">
+                            <Pause size={16} style={{ color: '#f2ca50' }} />
+                            <div>
+                              <div className="np-sleep-choice-title">Stop immediately</div>
+                              <div className="np-sleep-sub">
+                                Pause after {sleepPendingMin >= 60 ? `${Math.floor(sleepPendingMin / 60)}h ${sleepPendingMin % 60 ? `${sleepPendingMin % 60}m` : ''}`.trim() : `${sleepPendingMin}m`}
+                              </div>
+                            </div>
+                          </div>
+                          <ChevronRight size={16} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                        </button>
+                        <button
+                          type="button"
+                          className="np-sleep-opt np-sleep-choice"
+                          onClick={() => startSleepTimer(sleepPendingMin, true)}
+                        >
+                          <div className="np-sleep-choice-left">
+                            <Music size={16} style={{ color: '#f2ca50' }} />
+                            <div>
+                              <div className="np-sleep-choice-title">Finish current track</div>
+                              <div className="np-sleep-sub">
+                                Wait for song to end after {sleepPendingMin >= 60 ? `${Math.floor(sleepPendingMin / 60)}h ${sleepPendingMin % 60 ? `${sleepPendingMin % 60}m` : ''}`.trim() : `${sleepPendingMin}m`}
+                              </div>
+                            </div>
+                          </div>
+                          <ChevronRight size={16} style={{ color: 'rgba(255,255,255,0.35)' }} />
+                        </button>
+                        <button
+                          type="button"
+                          className="np-sleep-back"
+                          onClick={() => setSleepPendingMin(null)}
+                        >
+                          ← Change time
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="np-sleep-dial">
+                          <div className="np-sleep-col">
+                            <button type="button" className="np-dial-step" onClick={() => setSleepHours(h => (h + 1) % 13)}><ChevronUp size={16} /></button>
+                            <span className="np-dial-val">{String(sleepHours).padStart(2, '0')}</span>
+                            <span className="np-dial-unit">hr</span>
+                            <button type="button" className="np-dial-step" onClick={() => setSleepHours(h => (h + 12) % 13)}><ChevronDown size={16} /></button>
+                          </div>
+                          <span className="np-dial-colon">:</span>
+                          <div className="np-sleep-col">
+                            <button type="button" className="np-dial-step" onClick={() => setSleepMins(m => (m + 1) % 60)}><ChevronUp size={16} /></button>
+                            <span className="np-dial-val">{String(sleepMins).padStart(2, '0')}</span>
+                            <span className="np-dial-unit">min</span>
+                            <button type="button" className="np-dial-step" onClick={() => setSleepMins(m => (m + 59) % 60)}><ChevronDown size={16} /></button>
+                          </div>
+                        </div>
+
+                        <div className="np-sleep-presets">
+                          {[
+                            { label: '5m', min: 5 },
+                            { label: '10m', min: 10 },
+                            { label: '15m', min: 15 },
+                            { label: '30m', min: 30 },
+                            { label: '1h', min: 60 },
+                          ].map(p => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className={`np-sleep-chip${(sleepHours * 60 + sleepMins) === p.min ? ' active' : ''}`}
+                              onClick={() => {
+                                setSleepHours(Math.floor(p.min / 60))
+                                setSleepMins(p.min % 60)
+                                setSleepPendingMin(p.min)
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="np-sleep-save"
+                          disabled={sleepHours === 0 && sleepMins === 0}
+                          onClick={() => setSleepPendingMin(sleepHours * 60 + sleepMins)}
+                        >
+                          Set Timer ({sleepHours > 0 ? `${sleepHours}h ` : ''}{sleepMins}m)
+                        </button>
+
+                        {(sleepTargetAt || sleepEndOfTrack) && (
+                          <button type="button" className="np-sleep-off" onClick={() => startSleepTimer(0)}>
+                            Turn off timer
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {showLyrics ? (
                 <div className="np-lyrics-wrap">
