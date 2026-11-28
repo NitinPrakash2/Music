@@ -80,6 +80,14 @@ function AppInner() {
   })
   const [heroAmbientThumb, setHeroAmbientThumb] = useState('')
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  const [refreshNonce, setRefreshNonce] = useState(0)
+  const [pullY, setPullY] = useState(0)
+  const [pullRefreshing, setPullRefreshing] = useState(false)
+  const [cardDragY, setCardDragY] = useState(0)
+  const contentRef = useRef(null)
+  const pullStartYRef = useRef(null)
+  const cardDragStartRef = useRef(null)
+  const suppressSuggestionsRef = useRef(false)
   const accountWrapRef = useRef(null)
   const npMenuBtnRef = useRef(null)
   const activeLyricRef = useRef(null)
@@ -254,6 +262,33 @@ function AppInner() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // Native Android back button handler: close overlays/search first, then navigate back to Home
+  useEffect(() => {
+    window.__rxHandleBack = () => {
+      if (npMenuOpen) { setNpMenuOpen(false); return true }
+      if (showVol) { setShowVol(false); return true }
+      if (showCard) { closeCard(); return true }
+      if (drawerOpen) { setDrawerOpen(false); return true }
+      if (accountMenuOpen) { setAccountMenuOpen(false); return true }
+      if (searchOpen || searchFocused || showSuggestions || showRecentSearches) {
+        setSearchOpen(false)
+        setSearchFocused(false)
+        setShowSuggestions(false)
+        setShowRecentSearches(false)
+        searchInputRef.current?.blur()
+        return true
+      }
+      const curRoute = window.location.hash.slice(1) || '/'
+      if (curRoute !== '/' && curRoute !== '') {
+        if (window.history.length > 1) window.history.back()
+        else navigate('/')
+        return true
+      }
+      return false
+    }
+    return () => { delete window.__rxHandleBack }
+  }, [npMenuOpen, showVol, showCard, drawerOpen, accountMenuOpen, searchOpen, searchFocused, showSuggestions, showRecentSearches])
+
   useEffect(() => {
     if (user) {
       apiFetch('/api/auth/me').then(r => {
@@ -312,16 +347,17 @@ function AppInner() {
   }, [])
 
   useEffect(() => {
-    if (searchQuery.trim().length > 0) {
+    if (suppressSuggestionsRef.current) return
+    if (searchQuery.trim().length > 0 && searchFocused) {
       const timer = setTimeout(() => {
-        fetchSuggestions(searchQuery)
-      }, 300)
+        if (!suppressSuggestionsRef.current) fetchSuggestions(searchQuery)
+      }, 250)
       return () => clearTimeout(timer)
     } else {
       setSearchSuggestions([])
       setShowSuggestions(false)
     }
-  }, [searchQuery])
+  }, [searchQuery, searchFocused])
 
   const fetchLiked = async () => {
     try {
@@ -346,7 +382,7 @@ function AppInner() {
     try {
       const res = await apiFetch(`/api/search-suggestions?q=${encodeURIComponent(query)}`)
       const data = await res.json()
-      if (res.ok && data.suggestions) {
+      if (res.ok && data.suggestions && !suppressSuggestionsRef.current) {
         setSearchSuggestions(data.suggestions)
         setShowSuggestions(true)
       }
@@ -406,21 +442,23 @@ function AppInner() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const handleSearch = async (q = searchQuery) => {
+  const handleSearch = (q = searchQuery) => {
     q = q.trim()
     if (!q) return
-    try {
-      await apiFetch('/api/search-history', {
-        method: 'POST',
-        body: JSON.stringify({ query: q })
-      })
-      await fetchSearchHistory()
-    } catch (err) {
-      console.error('Failed to save search history:', err)
-    }
+    suppressSuggestionsRef.current = true
     setShowRecentSearches(false)
     setShowSuggestions(false)
+    setSearchSuggestions([])
+    setSearchFocused(false)
+    searchInputRef.current?.blur()
     navigate(`/search?q=${encodeURIComponent(q)}`)
+    // Save search history in background so navigation & search start immediately
+    apiFetch('/api/search-history', {
+      method: 'POST',
+      body: JSON.stringify({ query: q })
+    })
+      .then(() => fetchSearchHistory())
+      .catch(() => {})
   }
 
   const removeRecentSearch = async (q) => {
@@ -752,11 +790,11 @@ function AppInner() {
 
   let content
   if (route === '/' || route === '') {
-    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} recentlyPlayed={recentlyPlayed} recentSearches={recentSearches} />
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} recentlyPlayed={recentlyPlayed} recentSearches={recentSearches} refreshNonce={refreshNonce} />
   } else if (route.startsWith('/search')) {
     const params = new URLSearchParams(route.split('?')[1])
     const q = params.get('q') || ''
-    content = <Search searchQuery={q} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
+    content = <Search searchQuery={q} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} refreshNonce={refreshNonce} />
   } else if (route.startsWith('/playlist/')) {
     const type = route.split('/')[2]
     content = <Playlist type={type} onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} />
@@ -768,7 +806,7 @@ function AppInner() {
   } else if (route === '/account') {
     content = <AccountPage user={user} navigate={navigate} onLogout={handleLogout} />
   } else {
-    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} recentlyPlayed={recentlyPlayed} recentSearches={recentSearches} />
+    content = <Home onPlayTrack={play} activeItem={activeItem} isPlaying={isPlaying} downloading={downloading} liked={liked} onToggleLike={toggleLike} onAmbientChange={setHeroAmbientThumb} recentlyPlayed={recentlyPlayed} recentSearches={recentSearches} refreshNonce={refreshNonce} />
   }
 
   if (!isOnline) {
@@ -888,28 +926,31 @@ function AppInner() {
                   <SearchIcon size={18} />
                 </button>
 
-                <div className={`topbar-search-pill${searchFocused ? ' focused' : ''}`}>
+                <form
+                  className={`topbar-search-pill${searchFocused ? ' focused' : ''}`}
+                  onSubmit={e => { e.preventDefault(); handleSearch() }}
+                >
                   <SearchIcon size={17} style={{ flexShrink: 0, color: searchFocused ? '#f2ca50' : '#888', transition: 'color 0.2s' }} />
                   <input
                     ref={searchInputRef}
+                    enterKeyHint="search"
                     placeholder="Songs, artists, albums..."
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
+                    onChange={e => { suppressSuggestionsRef.current = false; setSearchQuery(e.target.value) }}
                     onKeyDown={e => {
-                      if (e.key === 'Enter') handleSearch()
-                      if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); setSearchSuggestions([]) }
+                      if (e.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); setSearchSuggestions([]); setShowSuggestions(false) }
                     }}
-                    onFocus={() => { setSearchFocused(true); if (!searchQuery.trim()) setShowRecentSearches(true) }}
+                    onFocus={() => { suppressSuggestionsRef.current = false; setSearchFocused(true); if (!searchQuery.trim()) setShowRecentSearches(true) }}
                     onBlur={() => setTimeout(() => {
                       setSearchFocused(false); setShowRecentSearches(false); setShowSuggestions(false)
-                    }, 200)}
+                    }, 180)}
                   />
                   {searchQuery && (
-                    <button className="topbar-clear-btn" onClick={() => { setSearchQuery(''); setSearchSuggestions([]); searchInputRef.current?.focus() }}>
+                    <button type="button" className="topbar-clear-btn" onClick={() => { suppressSuggestionsRef.current = false; setSearchQuery(''); setSearchSuggestions([]); searchInputRef.current?.focus() }}>
                       <X size={15} />
                     </button>
                   )}
-                </div>
+                </form>
 
                 <button
                   type="button"
@@ -987,7 +1028,81 @@ function AppInner() {
             </div>
           </div>
 
-        <div className="content">
+        <div
+          ref={contentRef}
+          className="content"
+          onPointerDown={(e) => {
+            if ((contentRef.current?.scrollTop || 0) <= 2 && !pullRefreshing && e.button === 0) {
+              pullStartYRef.current = e.clientY
+            } else {
+              pullStartYRef.current = null
+            }
+          }}
+          onPointerMove={(e) => {
+            if (pullStartYRef.current === null || pullRefreshing) return
+            const dy = e.clientY - pullStartYRef.current
+            if (dy > 12 && (contentRef.current?.scrollTop || 0) <= 2) {
+              setPullY(Math.min(84, (dy - 12) * 0.55))
+            } else if (dy <= 0) {
+              setPullY(0)
+            }
+          }}
+          onPointerUp={() => {
+            if (pullStartYRef.current === null) return
+            pullStartYRef.current = null
+            if (pullY >= 50) {
+              setPullRefreshing(true)
+              setPullY(44)
+              setRefreshNonce(n => n + 1)
+              setTimeout(() => {
+                setPullRefreshing(false)
+                setPullY(0)
+              }, 700)
+            } else {
+              setPullY(0)
+            }
+          }}
+          onPointerCancel={() => { pullStartYRef.current = null; setPullY(0) }}
+          onTouchStart={(e) => {
+            if ((contentRef.current?.scrollTop || 0) <= 2 && !pullRefreshing) {
+              pullStartYRef.current = e.touches[0].clientY
+            } else {
+              pullStartYRef.current = null
+            }
+          }}
+          onTouchMove={(e) => {
+            if (pullStartYRef.current === null || pullRefreshing) return
+            const dy = e.touches[0].clientY - pullStartYRef.current
+            if (dy > 8 && (contentRef.current?.scrollTop || 0) <= 2) {
+              setPullY(Math.min(84, (dy - 8) * 0.55))
+            } else if (dy <= 0) {
+              setPullY(0)
+            }
+          }}
+          onTouchEnd={() => {
+            if (pullStartYRef.current === null) return
+            pullStartYRef.current = null
+            if (pullY >= 50) {
+              setPullRefreshing(true)
+              setPullY(44)
+              setRefreshNonce(n => n + 1)
+              setTimeout(() => {
+                setPullRefreshing(false)
+                setPullY(0)
+              }, 700)
+            } else {
+              setPullY(0)
+            }
+          }}
+        >
+          {(pullY > 6 || pullRefreshing) && (
+            <div className="ptr-indicator" style={{ height: pullY, opacity: Math.min(1, pullY / 44) }}>
+              <div className="ptr-pill">
+                <RefreshCw size={15} className={pullRefreshing ? 'spin' : ''} style={{ transform: pullRefreshing ? undefined : `rotate(${pullY * 4}deg)` }} />
+                <span>{pullRefreshing ? 'Refreshing...' : pullY >= 54 ? 'Release to refresh' : 'Pull to refresh'}</span>
+              </div>
+            </div>
+          )}
           {content}
         </div>
         </div>
@@ -1110,8 +1225,51 @@ function AppInner() {
       </div>
 
 {showCard && activeItem && (
-        <div className={`np-overlay${cardClosing ? ' closing' : ''}`} onClick={closeCard}>
-          <div className={`np-card${cardClosing ? ' closing' : ''}`} onClick={e => e.stopPropagation()}>
+        <div className={`np-overlay${cardClosing ? ' closing' : ''}`} onClick={() => { setCardDragY(0); closeCard() }}>
+          <div
+            className={`np-card${cardClosing ? ' closing' : ''}`}
+            style={cardDragY > 0 ? { transform: `translateY(${cardDragY}px)`, transition: 'none' } : undefined}
+            onClick={e => e.stopPropagation()}
+            onPointerDown={(e) => {
+              if (e.target.closest('button, input, .np-seek, .np-vol-vert, .np-lyrics-scroll')) return
+              cardDragStartRef.current = e.clientY
+            }}
+            onPointerMove={(e) => {
+              if (cardDragStartRef.current === null) return
+              const dy = e.clientY - cardDragStartRef.current
+              if (dy > 0) setCardDragY(dy)
+            }}
+            onPointerUp={() => {
+              if (cardDragStartRef.current === null) return
+              cardDragStartRef.current = null
+              if (cardDragY > 85) {
+                setCardDragY(0)
+                closeCard()
+              } else {
+                setCardDragY(0)
+              }
+            }}
+            onPointerCancel={() => { cardDragStartRef.current = null; setCardDragY(0) }}
+            onTouchStart={(e) => {
+              if (e.target.closest('button, input, .np-seek, .np-vol-vert, .np-lyrics-scroll')) return
+              cardDragStartRef.current = e.touches[0].clientY
+            }}
+            onTouchMove={(e) => {
+              if (cardDragStartRef.current === null) return
+              const dy = e.touches[0].clientY - cardDragStartRef.current
+              if (dy > 0) setCardDragY(dy)
+            }}
+            onTouchEnd={() => {
+              if (cardDragStartRef.current === null) return
+              cardDragStartRef.current = null
+              if (cardDragY > 85) {
+                setCardDragY(0)
+                closeCard()
+              } else {
+                setCardDragY(0)
+              }
+            }}
+          >
             <div className="np-card-bg" style={{ backgroundImage: `url(${activeItem.thumbnail})` }} />
             <div className="np-card-dim" />
 
@@ -1137,17 +1295,17 @@ function AppInner() {
                       </div>
                     )}
                     <button className="np-vol-btn np-icon-btn" onClick={() => setShowVol(v => !v)} title="Volume">
-                      {volume === 0 ? <VolumeX size={18} /> : volume < 0.5 ? <Volume1 size={18} /> : <Volume2 size={18} />}
+                      {volume === 0 ? <VolumeX size={17} /> : volume < 0.5 ? <Volume1 size={17} /> : <Volume2 size={17} />}
                     </button>
                   </div>
                   <button
                     type="button"
                     className="np-like np-icon-btn"
                     title={liked[activeItem.videoId] ? 'Unlike' : 'Like'}
-                    style={{ color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.5)' }}
+                    style={{ color: liked[activeItem.videoId] ? '#f2ca50' : 'rgba(255,255,255,0.55)' }}
                     onClick={e => toggleLike(e, activeItem.videoId, activeItem)}
                   >
-                    <Heart size={18} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
+                    <Heart size={17} fill={liked[activeItem.videoId] ? '#f2ca50' : 'none'} />
                   </button>
                   <button
                     type="button"
@@ -1164,7 +1322,7 @@ function AppInner() {
                     title="Add to Playlist / Download"
                     onClick={e => { e.stopPropagation(); setNpMenuOpen(v => !v) }}
                   >
-                    <ListPlus size={18} />
+                    <ListPlus size={17} />
                   </button>
                   {npMenuOpen && (
                     <TrackMenu

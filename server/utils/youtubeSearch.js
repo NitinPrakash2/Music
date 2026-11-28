@@ -14,6 +14,16 @@ const getApiKeys = () => {
 const NON_MUSIC_RE = /(#shorts|\bshorts\b|\byoutube shorts\b|\broast\b|\bvlog\b|\bpodcast\b|\binterview\b|\breaction\b|\bgameplay\b|\bwalkthrough\b|\btrailer\b|\bteaser\b|\bfull movie\b|\bepisode\b|\bunboxing\b|\breview\b|\bwhatsapp status\b|\bstatus video\b)/i;
 const HAS_MUSIC_WORD_RE = /\b(song|songs|music|audio|lyrics|lyrical|lofi|remix|rap|track|album|ost|qawwali|ghazal|bhajan|mashup|jukebox|cover)\b/i;
 
+// Cooldown exhausted YT API keys for 15 min so searches don't stall on 403s
+const keyCooldowns = new Map();
+const KEY_COOLDOWN_MS = 15 * 60 * 1000;
+
+const withTimeout = (promise, ms) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)),
+  ]);
+
 const parseIsoDuration = (iso = '') => {
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
@@ -44,6 +54,7 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
   const keys = getApiKeys();
 
   for (const key of keys) {
+    if ((keyCooldowns.get(key) || 0) > Date.now()) continue;
     try {
       const params = {
         part: 'snippet',
@@ -56,7 +67,7 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
 
       const res = await axios.get('https://www.googleapis.com/youtube/v3/search', {
         params,
-        timeout: 8000,
+        timeout: 4000,
       });
 
       const rawItems = res.data.items || [];
@@ -68,7 +79,7 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
         try {
           const vRes = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
             params: { part: 'contentDetails', id: ids.join(','), key },
-            timeout: 8000,
+            timeout: 3500,
           });
           for (const v of vRes.data.items || []) {
             durations[v.id] = parseIsoDuration(v.contentDetails?.duration || '');
@@ -93,14 +104,28 @@ const youtubeSearch = async (query, { maxResults = 10, videoCategoryId = '10' } 
       if (filtered.length > 0) return filtered;
     } catch (err) {
       const status = err.response?.status;
+      if (status === 403 || status === 429) {
+        keyCooldowns.set(key, Date.now() + KEY_COOLDOWN_MS);
+      }
       console.warn(`[YT API] Key failed (${status || err.message}), trying next/fallback...`);
     }
   }
 
-  // Zero-quota fallback via yt-search: bias toward songs when query has no music keyword
+  // Zero-quota fallback via yt-search with timeout + retry
   const searchTerm = HAS_MUSIC_WORD_RE.test(query) ? query : `${query} song`;
-  const r = await yts(searchTerm);
-  return (r.videos || [])
+  let videos = [];
+  try {
+    const r = await withTimeout(yts(searchTerm), 6500);
+    videos = r?.videos || [];
+  } catch {
+    if (searchTerm !== query) {
+      try {
+        const r2 = await withTimeout(yts(query), 6500);
+        videos = r2?.videos || [];
+      } catch {}
+    }
+  }
+  return videos
     .filter((v) => isMusicCandidate(v.title, v.seconds || 0))
     .map((v, idx) => ({
       videoId: v.videoId,

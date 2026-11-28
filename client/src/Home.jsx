@@ -71,7 +71,7 @@ function TrackCard({ item, activeItem, isPlaying, downloading, liked, onPlayTrac
   )
 }
 
-export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike, onAmbientChange, recentlyPlayed = [], recentSearches = [] }) {
+export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike, onAmbientChange, recentlyPlayed = [], recentSearches = [], refreshNonce = 0 }) {
   const [playlists, setPlaylists] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -147,17 +147,14 @@ export default function Home({ onPlayTrack, activeItem, isPlaying, downloading, 
   }, []);
 
   useEffect(() => {
+    if (refreshNonce > 0) {
+      fetchPlaylists();
+    }
+  }, [refreshNonce]);
+
+  useEffect(() => {
     if (loading) return;
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry, i) => {
-        if (entry.isIntersecting) {
-          setTimeout(() => entry.target.classList.add('visible'), i * 60);
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.08 });
-    document.querySelectorAll('.playlist-section').forEach(el => observer.observe(el));
-    return () => observer.disconnect();
+    document.querySelectorAll('.playlist-section').forEach(el => el.classList.add('visible'));
   }, [loading, recentlyPlayed.length, recommended.length]);
 
   // Fetch AI-powered personalized recommendations from listening & search history

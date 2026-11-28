@@ -57,32 +57,77 @@ function SearchCard({ item, activeItem, isPlaying, downloading, liked, onPlayTra
   )
 }
 
-export default function Search({ searchQuery, onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike }) {
+export default function Search({ searchQuery, onPlayTrack, activeItem, isPlaying, downloading, liked, onToggleLike, refreshNonce = 0 }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [menuOpen, setMenuOpen] = useState(null);
 
-  useEffect(() => { if (searchQuery) search(searchQuery); }, [searchQuery]);
+  useEffect(() => {
+    if (searchQuery) search(searchQuery, refreshNonce > 0);
+  }, [searchQuery, refreshNonce]);
 
-  const search = async (q) => {
+  const search = async (q, forceRefresh = false) => {
     q = q.trim(); if (!q) return;
-    setLoading(true); setError(''); setResults([]);
-    try {
-      const res = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Search failed');
-      setResults(data.results || []);
-      if (!data.results?.length) setError('No results found.');
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+    const cacheKey = `rx_search_v4_${q.toLowerCase()}`;
+    if (!forceRefresh) {
+      try {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setResults(parsed);
+            setError('');
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {}
+    }
+
+    setLoading(true); setError('');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(`${API}/api/search?q=${encodeURIComponent(q)}${forceRefresh ? '&fresh=1' : ''}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Search failed');
+        const list = data.results || [];
+        setResults(list);
+        if (list.length > 0) {
+          try { sessionStorage.setItem(cacheKey, JSON.stringify(list)); } catch {}
+        } else {
+          setError('No results found.');
+        }
+        setLoading(false);
+        return;
+      } catch (err) {
+        if (attempt === 0) continue;
+        setError(err.message || 'Search failed');
+      }
+    }
+    setLoading(false);
   };
 
   if (loading) return <div className="search-loading"><Loader2 size={28} className="spin" /><p>Searching...</p></div>;
 
   return (
     <div className="search-page">
-      {error && <p className="search-error">{error}</p>}
+      {error && (
+        <div className="search-error" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: 24 }}>
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => search(searchQuery, true)}
+            style={{
+              padding: '8px 20px', borderRadius: 999, border: 'none',
+              background: 'linear-gradient(135deg,#f2ca50,#d4a12a)', color: '#1a1000',
+              fontWeight: 700, fontSize: 13, cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {results.length > 0 && (
         <>
           <div className="results-header">
